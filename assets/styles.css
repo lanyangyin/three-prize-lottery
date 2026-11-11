@@ -246,7 +246,7 @@ a {
 #names-input {
   flex: 1;
   width: 100%;
-  min-height: 252px;
+  min-height: 200px;
   padding: 12px 14px;
   resize: vertical;
   border: 1px solid var(--line);
@@ -293,6 +293,67 @@ a {
   color: var(--red);
 }
 
+.prizes-block {
+  flex: 0 0 auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.prize-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.prize-index {
+  display: grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #2b3249;
+  border-radius: 50%;
+  background: #121722;
+  color: var(--sub);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.prize-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: none;
+  background: #0c0f18;
+  color: var(--text);
+  font: 500 12.5px/1 var(--font);
+  transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+
+.prize-input:focus {
+  border-color: rgba(255, 204, 85, 0.45);
+  box-shadow: 0 0 0 3px rgba(255, 204, 85, 0.08);
+}
+
+.prize-input:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.prize-input.bad {
+  border-color: rgba(255, 107, 127, 0.55);
+}
+
+.prize-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .history-block {
   padding-top: 16px;
   border-top: 1px solid var(--line);
@@ -319,7 +380,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 208px;
+  max-height: 184px;
   overflow: auto;
   padding-right: 2px;
 }

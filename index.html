@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>三人抽奖器 · 3 个平级奖品 · 5~50 人</title>
-  <meta name="description" content="3 个平级奖品、5~50 人的现场抽奖工具：依次抽出 3 位中奖者，每人最多中一个，人不到场可重抽，全部在浏览器本地运行。">
+  <title>三人抽奖器 · 3 个不同的平级奖品 · 5~50 人</title>
+  <meta name="description" content="3 个平级但各不相同的奖品、5~50 人的现场抽奖工具：依次抽出 3 位中奖者，每人最多中一个，人不到场可重抽，全部在浏览器本地运行。">
   <meta name="theme-color" content="#0b0d14">
   <meta property="og:type" content="website">
   <meta property="og:title" content="三人抽奖器">
-  <meta property="og:description" content="3 个平级奖品 · 5~50 人 · 每人最多中一个。深色舞台 + 滚动揭晓的静态抽奖页。">
+  <meta property="og:description" content="3 个不同的平级奖品 · 5~50 人 · 每人最多中一个。深色舞台 + 滚动揭晓的静态抽奖页。">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/styles.css">
 </head>
@@ -19,7 +19,7 @@
         <span class="brand-mark" aria-hidden="true">抽</span>
         <div class="brand-text">
           <h1>三人抽奖器</h1>
-          <p>3 个平级奖品 · 5~50 人 · 每人最多中一个</p>
+          <p>3 个不同的平级奖品 · 5~50 人 · 每人最多中一个</p>
         </div>
       </div>
       <div class="header-meta">
@@ -46,6 +46,27 @@
           <p class="prob" id="prob-text">共 0 人 · 每人中奖概率 —</p>
         </section>
 
+        <section class="setup-block prizes-block">
+          <div class="block-head">
+            <h2>三个奖品</h2>
+            <span class="badge">平级</span>
+          </div>
+          <p class="hint">三个奖品平级但各不相同，改成你的实际奖品。</p>
+          <label class="prize-row">
+            <span class="prize-index">1</span>
+            <input class="prize-input" id="prize-1" type="text" maxlength="20" value="奖品 A" autocomplete="off" aria-label="奖品 1">
+          </label>
+          <label class="prize-row">
+            <span class="prize-index">2</span>
+            <input class="prize-input" id="prize-2" type="text" maxlength="20" value="奖品 B" autocomplete="off" aria-label="奖品 2">
+          </label>
+          <label class="prize-row">
+            <span class="prize-index">3</span>
+            <input class="prize-input" id="prize-3" type="text" maxlength="20" value="奖品 C" autocomplete="off" aria-label="奖品 3">
+          </label>
+          <p class="prize-error" id="prize-error" hidden></p>
+        </section>
+
         <section class="setup-block history-block">
           <div class="block-head">
             <h2>历史记录</h2>
@@ -59,7 +80,7 @@
 
       <section class="panel draw-panel" id="draw-panel" aria-label="抽奖舞台">
         <div class="stage-top">
-          <span class="next" id="next-text">下一个：第 1 位</span>
+          <span class="next" id="next-text">下一个：奖品 A</span>
           <span class="remain" id="remain-text">待抽奖 0 人</span>
         </div>
 
@@ -85,16 +106,16 @@
         </div>
 
         <div class="cards" id="cards">
-          <article class="card" data-slot="第 1 位">
-            <span class="card-prize">中奖者 1</span>
+          <article class="card" data-prize="奖品 A">
+            <span class="card-prize">奖品 A</span>
             <span class="card-name">—</span>
           </article>
-          <article class="card" data-slot="第 2 位">
-            <span class="card-prize">中奖者 2</span>
+          <article class="card" data-prize="奖品 B">
+            <span class="card-prize">奖品 B</span>
             <span class="card-name">—</span>
           </article>
-          <article class="card" data-slot="第 3 位">
-            <span class="card-prize">中奖者 3</span>
+          <article class="card" data-prize="奖品 C">
+            <span class="card-prize">奖品 C</span>
             <span class="card-name">—</span>
           </article>
         </div>
@@ -103,7 +124,7 @@
 
         <div class="statusbar">
           <span id="status-text" role="status">就绪 · 按空格或点「开始抽奖」</span>
-          <span class="status-tip">3 个平级奖品 · 每人最多中一个</span>
+          <span class="status-tip">三个奖品平级 · 每人最多中一个</span>
         </div>
       </section>
     </main>

@@ -1,6 +1,7 @@
 /* 三人抽奖器 · 页面交互
  *
- * 三个奖品平级，依次抽出 3 位中奖者；中奖者从名单移除，每人最多中一个。
+ * 三个奖品平级但内容不同；依次抽出 3 位中奖者，
+ * 每位中奖者获得对应奖品，中奖者从名单移除，每人最多中一个。
  */
 (function () {
   'use strict';
@@ -11,7 +12,8 @@
     return;
   }
 
-  var SLOTS = Core.SLOTS;
+  var DEFAULT_PRIZES = Core.DEFAULT_PRIZES;
+  var PRIZE_COUNT = DEFAULT_PRIZES.length;
   var MIN_PLAYERS = Core.MIN_PLAYERS;
   var Round = Core.Round;
   var DrawError = Core.DrawError;
@@ -32,6 +34,7 @@
   var state = {
     round: null,
     rolling: false,
+    pending: null,
     history: [],
     startedAt: null,
     recordId: null
@@ -49,6 +52,8 @@
     importBtn: $('btn-import'),
     clearBtn: $('btn-clear'),
     file: $('file-input'),
+    prizeInputs: Array.prototype.slice.call(document.querySelectorAll('.prize-input')),
+    prizeError: $('prize-error'),
     history: $('history-list'),
     clearHistory: $('btn-clear-history'),
     next: $('next-text'),
@@ -66,7 +71,7 @@
     exportBtn: $('btn-export'),
     fullscreen: $('btn-fullscreen'),
     drawPanel: $('draw-panel'),
-    cards: Array.prototype.slice.call(document.querySelectorAll('.card')),
+    cards: $('cards'),
     status: $('status-text'),
     excluded: $('excluded-note'),
     live: $('live-status'),
@@ -116,11 +121,51 @@
     return Boolean(state.round && Object.keys(state.round.winners).length);
   }
 
-  function cardFor(slot) {
-    for (var i = 0; i < el.cards.length; i += 1) {
-      if (el.cards[i].getAttribute('data-slot') === slot) return el.cards[i];
+  function readPrizeInputs() {
+    return el.prizeInputs.map(function (input) {
+      return input.value.trim();
+    });
+  }
+
+  function prizeProblem(prizes) {
+    var list = prizes || readPrizeInputs();
+    if (list.length !== PRIZE_COUNT) return '需要填写 ' + PRIZE_COUNT + ' 个奖品名称';
+    for (var i = 0; i < list.length; i += 1) {
+      if (!list[i]) return '三个奖品名称都要填写';
     }
-    return null;
+    if (new Set(list).size !== list.length) return '三个奖品名称不能重复';
+    return '';
+  }
+
+  // 页面展示用：空输入时给一个占位名称
+  function displayPrizes() {
+    if (state.round) return state.round.prizes.slice();
+    return readPrizeInputs().map(function (name, index) {
+      return name || ('奖品 ' + (index + 1));
+    });
+  }
+
+  function fillPrizeInputs(prizes) {
+    el.prizeInputs.forEach(function (input, index) {
+      input.value = prizes[index] || DEFAULT_PRIZES[index] || '';
+    });
+  }
+
+  function updatePrizeError() {
+    if (state.round) {
+      el.prizeError.hidden = true;
+      el.prizeError.textContent = '';
+      el.prizeInputs.forEach(function (input) {
+        input.classList.remove('bad');
+      });
+      return;
+    }
+    var problem = prizeProblem();
+    el.prizeError.hidden = !problem;
+    el.prizeError.textContent = problem;
+    el.prizeInputs.forEach(function (input) {
+      input.classList.toggle('bad', Boolean(problem) && !input.value.trim());
+    });
   }
 
   /* ---------------- 本地存储 ---------------- */
@@ -142,9 +187,9 @@
       var winners = rec.winners.filter(function (w) {
         return w && w.name;
       }).map(function (w, index) {
-        // 兼容旧版记录：旧版按一等奖/二等奖/三等奖存，这里统一转成平级名额
+        // 兼容旧版记录：旧版按一等奖/二等奖/三等奖或第 1/2/3 位存
         return {
-          slot: String(w.slot || SLOTS[index] || ('第 ' + (index + 1) + ' 位')),
+          prize: String(w.prize || ('奖品 ' + (index + 1))),
           name: String(w.name)
         };
       });
@@ -163,8 +208,9 @@
   function persist() {
     var round = state.round;
     var data = {
-      v: 2,
+      v: 3,
       names: round ? round.names : parseNames(el.names.value),
+      prizes: round ? round.prizes.slice() : readPrizeInputs(),
       round: round && Object.keys(round.winners).length ? round.snapshot() : null,
       startedAt: state.startedAt,
       recordId: state.recordId,
@@ -197,7 +243,7 @@
       el.prob.textContent = '共 ' + n + ' 人 · 至少需要 ' + MIN_PLAYERS + ' 人';
       el.prob.classList.add('bad');
     } else {
-      var rate = (SLOTS.length / n * 100).toFixed(1);
+      var rate = (PRIZE_COUNT / n * 100).toFixed(1);
       el.prob.textContent = '共 ' + n + ' 人 · 每人中奖概率 ' + rate + '%';
       el.prob.classList.remove('bad');
     }
@@ -206,24 +252,41 @@
   function updateInfo() {
     var round = state.round;
     if (!round) {
-      el.next.textContent = '下一个：' + SLOTS[0];
+      el.next.textContent = '下一个：' + displayPrizes()[0];
       el.remain.textContent = '待抽奖 ' + currentNames().length + ' 人';
       return;
     }
-    el.next.textContent = round.nextSlot
-      ? '下一个：' + round.nextSlot
+    el.next.textContent = round.nextPrize
+      ? '下一个：' + round.nextPrize
       : '三位中奖者已全部抽出';
     el.remain.textContent = '剩余 ' + round.remaining + ' 人 · 已中奖 ' +
       Object.keys(round.winners).length + ' 人';
   }
 
   function renderCards() {
-    el.cards.forEach(function (card) {
-      var slot = card.getAttribute('data-slot');
-      var name = state.round ? state.round.winners[slot] : '';
-      var filled = Boolean(name);
-      card.classList.toggle('filled', filled);
-      card.querySelector('.card-name').textContent = filled ? name : '—';
+    var prizes = displayPrizes();
+    var winners = state.round ? state.round.winners : null;
+    el.cards.textContent = '';
+
+    prizes.forEach(function (prize) {
+      var winner = winners ? winners[prize] : '';
+      if (state.pending === prize) winner = '';
+
+      var card = document.createElement('article');
+      card.className = 'card' + (winner ? ' filled' : '');
+      card.setAttribute('data-prize', prize);
+
+      var label = document.createElement('span');
+      label.className = 'card-prize';
+      label.textContent = prize;
+
+      var name = document.createElement('span');
+      name.className = 'card-name';
+      name.textContent = winner || '—';
+
+      card.appendChild(label);
+      card.appendChild(name);
+      el.cards.appendChild(card);
     });
   }
 
@@ -254,6 +317,7 @@
   }
 
   function updateAll() {
+    updatePrizeError();
     updateCount();
     updateInfo();
     renderCards();
@@ -265,6 +329,9 @@
     el.names.disabled = locked;
     [el.sample, el.importBtn, el.clearBtn].forEach(function (btn) {
       btn.disabled = locked;
+    });
+    el.prizeInputs.forEach(function (input) {
+      input.disabled = locked;
     });
   }
 
@@ -279,15 +346,15 @@
 
   function renderRestoredStage() {
     var round = state.round;
-    var slot = round ? round.lastSlot : null;
-    if (!slot) {
+    var prize = round ? round.lastPrize : null;
+    if (!prize) {
       renderIdleStage();
       return;
     }
     el.stageName.classList.remove('is-rolling', 'is-idle');
     el.stageName.classList.add('is-winner');
-    el.stagePrize.textContent = slot + '中奖者';
-    el.stageName.textContent = round.winners[slot] || '';
+    el.stagePrize.textContent = '【' + prize + '】';
+    el.stageName.textContent = round.winners[prize] || '';
     el.stageHint.textContent = round.finished ? '三位中奖者已全部抽出' : '恭喜中奖！';
   }
 
@@ -327,7 +394,7 @@
       body.className = 'h-body';
       rec.winners.forEach(function (w) {
         var line = document.createElement('p');
-        line.textContent = w.slot + '中奖者：' + w.name;
+        line.textContent = w.prize + '：' + w.name;
         body.appendChild(line);
       });
       if (rec.excluded.length) {
@@ -461,7 +528,7 @@
 
     el.stageName.classList.remove('is-winner', 'is-idle');
     el.stageName.classList.add('is-rolling');
-    el.stagePrize.textContent = result.slot + '中奖者';
+    el.stagePrize.textContent = '【' + result.prize + '】';
     el.stageHint.textContent = '正在抽取……';
     el.stageName.textContent = state.round.names[
       Math.floor(Math.random() * state.round.names.length)
@@ -472,13 +539,14 @@
       el.stageName.textContent = result.name;
       void el.stageName.offsetWidth;
       el.stageName.classList.add('is-winner');
-      el.stagePrize.textContent = result.slot + '中奖者';
+      el.stagePrize.textContent = '【' + result.prize + '】';
       el.stageHint.textContent = '恭喜中奖！';
-      el.live.textContent = result.slot + '中奖者：' + result.name;
+      el.live.textContent = result.prize + '：' + result.name;
 
       state.rolling = false;
+      state.pending = null;
       updateAll();
-      setStatus(result.slot + '中奖者：' + result.name);
+      setStatus('【' + result.prize + '】' + result.name);
       fireConfetti();
       persist();
 
@@ -493,15 +561,24 @@
     if (state.rolling) return;
 
     if (!state.round) {
+      var problem = prizeProblem();
+      if (problem) {
+        updatePrizeError();
+        showToast(problem, 'error');
+        el.prizeInputs[0].focus();
+        return;
+      }
       try {
-        state.round = new Round(parseNames(el.names.value));
+        state.round = new Round(parseNames(el.names.value), readPrizeInputs());
       } catch (err) {
         showToast(err.message, 'error');
         return;
       }
       state.startedAt = new Date().toISOString();
       state.recordId = null;
+      state.pending = null;
       setInputLocked(true);
+      updatePrizeError();
       setStatus('名单已锁定 · 正在抽奖');
       updateAll();
       persist();
@@ -520,11 +597,13 @@
       return;
     }
 
+    state.pending = result.prize;
     persist();
     updateAll();
     playReveal(result).catch(function (err) {
       state.rolling = false;
-      updateButtons();
+      state.pending = null;
+      updateAll();
       showToast('抽奖出错：' + err.message, 'error');
     });
   }
@@ -532,17 +611,17 @@
   function startRedraw() {
     if (state.rolling || !state.round) return;
     var round = state.round;
-    var slot = round.lastSlot;
-    if (!slot) return;
+    var prize = round.lastPrize;
+    if (!prize) return;
     if (round.remaining === 0) {
       showToast('没有可替换的候选人了', 'error');
       return;
     }
-    var oldName = round.winners[slot];
+    var oldName = round.winners[prize];
 
     confirmDialog(
       '重新抽取',
-      slot + '中奖者「' + oldName + '」无法到场？\n作废后将从剩余 ' +
+      '【' + prize + '】中奖者「' + oldName + '」无法到场？\n作废后将从剩余 ' +
         round.remaining + ' 人中重抽一位，原中奖者不再参与本轮。',
       '作废并重抽'
     ).then(function (ok) {
@@ -554,17 +633,14 @@
         showToast(err.message, 'error');
         return;
       }
-      var card = cardFor(slot);
-      if (card) {
-        card.classList.remove('filled');
-        card.querySelector('.card-name').textContent = '—';
-      }
+      state.pending = prize;
       updateAll();
-      setStatus(slot + '中奖者「' + oldName + '」已作废，重新抽取……');
+      setStatus('【' + prize + '】「' + oldName + '」已作废，重新抽取……');
       persist();
       playReveal(result, { redraw: true }).catch(function (err) {
         state.rolling = false;
-        updateButtons();
+        state.pending = null;
+        updateAll();
         showToast('重抽出错：' + err.message, 'error');
       });
     });
@@ -579,6 +655,7 @@
       id: state.recordId,
       startedAt: state.startedAt || new Date().toISOString(),
       total: round.names.length,
+      prizes: round.prizes.slice(),
       winners: round.results(),
       excluded: round.excluded.slice()
     };
@@ -604,6 +681,7 @@
       stopConfetti();
       state.round = null;
       state.rolling = false;
+      state.pending = null;
       state.startedAt = null;
       state.recordId = null;
       el.live.textContent = '';
@@ -611,7 +689,7 @@
       renderIdleStage();
       updateAll();
       persist();
-      setStatus('已重置 · 改好名单后点「开始抽奖」');
+      setStatus('已重置 · 改好名单和奖品后点「开始抽奖」');
     };
 
     if (!hadWinner) {
@@ -765,6 +843,14 @@
     schedulePersist();
   });
 
+  el.prizeInputs.forEach(function (input) {
+    input.addEventListener('input', function () {
+      if (state.round) return;
+      updateAll();
+      schedulePersist();
+    });
+  });
+
   el.sample.addEventListener('click', function () {
     if (state.round) return;
     el.names.value = SAMPLE_NAMES.join('\n');
@@ -860,6 +946,11 @@
     state.history = normalizeHistory(saved.history);
     el.year.textContent = String(new Date().getFullYear());
 
+    var savedPrizes = Array.isArray(saved.prizes) && saved.prizes.length === PRIZE_COUNT
+      ? saved.prizes
+      : DEFAULT_PRIZES;
+    fillPrizeInputs(savedPrizes);
+
     var savedNames = Array.isArray(saved.names) ? saved.names : [];
     el.names.value = (savedNames.length ? savedNames : SAMPLE_NAMES).join('\n');
 
@@ -872,6 +963,7 @@
         state.startedAt = saved.startedAt || null;
         state.recordId = saved.recordId || null;
         el.names.value = state.round.names.join('\n');
+        fillPrizeInputs(state.round.prizes);
         setInputLocked(true);
         restored = true;
       } catch (err) {
