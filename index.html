@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>三人抽奖器 · 3 个不同的平级奖品 · 5~50 人</title>
-  <meta name="description" content="3 个平级但各不相同的奖品、5~50 人的现场抽奖工具：依次抽出 3 位中奖者，每人最多中一个，人不到场可重抽，全部在浏览器本地运行。">
+  <title>三人抽奖器 · 两步抽奖 · 数字编号</title>
+  <meta name="description" content="两步抽奖工具：第一步抽出 3 位数字编号中奖者，第二步把 3 个平级但不同的奖品随机分配给这 3 位，每人最多中一个，全部在浏览器本地运行。">
   <meta name="theme-color" content="#0b0d14">
   <meta property="og:type" content="website">
   <meta property="og:title" content="三人抽奖器">
-  <meta property="og:description" content="3 个不同的平级奖品 · 5~50 人 · 每人最多中一个。深色舞台 + 滚动揭晓的静态抽奖页。">
+  <meta property="og:description" content="先抽 3 位数字编号中奖者，再随机分配 3 个不同奖品 · 每人最多中一个。深色舞台两步抽奖页。">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/styles.css">
 </head>
@@ -19,7 +19,7 @@
         <span class="brand-mark" aria-hidden="true">抽</span>
         <div class="brand-text">
           <h1>三人抽奖器</h1>
-          <p>3 个不同的平级奖品 · 5~50 人 · 每人最多中一个</p>
+          <p>先抽 3 位中奖者 · 再随机分配 3 个平级奖品 · 每人最多中一个</p>
         </div>
       </div>
       <div class="header-meta">
@@ -32,18 +32,19 @@
       <aside class="panel setup" aria-label="抽奖设置">
         <section class="setup-block names-block">
           <div class="block-head">
-            <h2>参与者名单</h2>
-            <span class="badge" id="count-badge">0 人</span>
+            <h2>参与者编号</h2>
+            <span class="badge" id="count-badge">0 个</span>
           </div>
-          <p class="hint">一行一个名字，也支持逗号、顿号分隔，自动去重。</p>
-          <textarea id="names-input" spellcheck="false" autocomplete="off" aria-label="参与者名单"></textarea>
+          <p class="hint">只能填写数字编号，一行一个，也支持逗号分隔，自动去重。</p>
+          <textarea id="names-input" spellcheck="false" autocomplete="off" inputmode="numeric" placeholder="001&#10;002&#10;003..." aria-label="参与者数字编号"></textarea>
+          <p class="input-error" id="id-error" hidden></p>
           <div class="setup-actions">
             <button class="btn btn-ghost" id="btn-sample" type="button">示例</button>
             <button class="btn btn-ghost" id="btn-import" type="button">导入 TXT</button>
             <button class="btn btn-ghost" id="btn-clear" type="button">清空</button>
             <input type="file" id="file-input" accept=".txt,text/plain" hidden>
           </div>
-          <p class="prob" id="prob-text">共 0 人 · 每人中奖概率 —</p>
+          <p class="prob" id="prob-text">共 0 个编号 · 每人中奖概率 —</p>
         </section>
 
         <section class="setup-block prizes-block">
@@ -80,25 +81,32 @@
 
       <section class="panel draw-panel" id="draw-panel" aria-label="抽奖舞台">
         <div class="stage-top">
-          <span class="next" id="next-text">下一个：奖品 A</span>
-          <span class="remain" id="remain-text">待抽奖 0 人</span>
+          <span class="next" id="next-text">第一步 · 抽 3 位中奖者</span>
+          <span class="remain" id="remain-text">待抽奖 0 个编号</span>
+        </div>
+
+        <div class="steps" id="steps" aria-label="抽奖步骤">
+          <span class="step is-active" id="step-1"><span class="step-num">1</span>抽 3 位中奖者</span>
+          <span class="step-arrow" aria-hidden="true">→</span>
+          <span class="step" id="step-2"><span class="step-num">2</span>随机分配奖品</span>
         </div>
 
         <div class="stage" id="stage">
           <div class="ring" aria-hidden="true"></div>
           <canvas id="confetti" aria-hidden="true"></canvas>
-          <p class="stage-prize" id="stage-prize">三个平级奖品</p>
+          <p class="stage-prize" id="stage-prize">两步抽奖</p>
           <div class="stage-name" id="stage-name">准备好了吗？</div>
-          <p class="stage-hint" id="stage-hint">每人最多中一个 · 按空格开始</p>
+          <div class="assign-list" id="assign-list" hidden></div>
+          <p class="stage-hint" id="stage-hint">先抽 3 位中奖者 · 按空格开始</p>
         </div>
 
         <div class="controls">
           <button class="btn btn-primary" id="btn-draw" type="button">
-            <span id="draw-label">开始抽奖</span>
+            <span id="draw-label">抽取第 1 位</span>
             <kbd id="draw-kbd">空格</kbd>
           </button>
           <div class="controls-side">
-            <button class="btn btn-secondary" id="btn-redraw" type="button" disabled>此人不到场 · 重抽</button>
+            <button class="btn btn-secondary" id="btn-redraw" type="button" disabled>最后一位不到场 · 重抽</button>
             <button class="btn btn-secondary" id="btn-reset" type="button">重置</button>
             <button class="btn btn-secondary" id="btn-export" type="button" disabled>导出记录</button>
             <button class="btn btn-secondary btn-icon" id="btn-fullscreen" type="button" title="全屏（投屏用）" aria-label="全屏（投屏用）">⛶</button>
@@ -106,16 +114,16 @@
         </div>
 
         <div class="cards" id="cards">
-          <article class="card" data-prize="奖品 A">
-            <span class="card-prize">奖品 A</span>
+          <article class="card" data-index="1">
+            <span class="card-prize">中奖者 1</span>
             <span class="card-name">—</span>
           </article>
-          <article class="card" data-prize="奖品 B">
-            <span class="card-prize">奖品 B</span>
+          <article class="card" data-index="2">
+            <span class="card-prize">中奖者 2</span>
             <span class="card-name">—</span>
           </article>
-          <article class="card" data-prize="奖品 C">
-            <span class="card-prize">奖品 C</span>
+          <article class="card" data-index="3">
+            <span class="card-prize">中奖者 3</span>
             <span class="card-name">—</span>
           </article>
         </div>
@@ -123,8 +131,8 @@
         <p class="excluded-note" id="excluded-note" hidden></p>
 
         <div class="statusbar">
-          <span id="status-text" role="status">就绪 · 按空格或点「开始抽奖」</span>
-          <span class="status-tip">三个奖品平级 · 每人最多中一个</span>
+          <span id="status-text" role="status">就绪 · 按空格或点「抽取第 1 位」</span>
+          <span class="status-tip">先抽人 · 再分奖品 · 每人最多中一个</span>
         </div>
       </section>
     </main>

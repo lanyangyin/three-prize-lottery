@@ -272,6 +272,17 @@ a {
   cursor: not-allowed;
 }
 
+#names-input.bad {
+  border-color: rgba(255, 107, 127, 0.55);
+}
+
+.input-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .setup-actions {
   display: flex;
   gap: 7px;
@@ -598,13 +609,72 @@ a {
   text-align: right;
 }
 
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.015);
+  color: var(--sub);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.step-num {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 50%;
+  background: #202637;
+  color: var(--sub);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.step.is-active {
+  border-color: rgba(255, 204, 85, 0.42);
+  background: rgba(255, 204, 85, 0.07);
+  color: var(--text);
+}
+
+.step.is-active .step-num {
+  background: var(--gold);
+  color: #1b1503;
+}
+
+.step.is-done {
+  border-color: rgba(90, 209, 165, 0.32);
+  color: #9fb3c8;
+}
+
+.step.is-done .step-num {
+  background: rgba(90, 209, 165, 0.18);
+  color: var(--green);
+}
+
+.step-arrow {
+  color: #4c5470;
+  font-size: 12px;
+}
+
 .stage {
   position: relative;
   isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: clamp(320px, 44vh, 480px);
+  height: clamp(300px, 40vh, 440px);
   overflow: hidden;
   border: 1px solid #1d2334;
   border-radius: 18px;
@@ -715,6 +785,45 @@ a {
   color: var(--sub);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.assign-list {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: min(76%, 520px);
+}
+
+.assign-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 204, 85, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 204, 85, 0.055);
+}
+
+.assign-prize {
+  flex: 1;
+  overflow-wrap: anywhere;
+  color: var(--gold);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.assign-arrow {
+  color: var(--sub);
+  font-size: 13px;
+}
+
+.assign-id {
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 控制区 ---------- */
@@ -846,6 +955,23 @@ a {
 
 #draw-panel:fullscreen .card-name {
   font-size: 24px;
+}
+
+#draw-panel:fullscreen .assign-list {
+  width: min(64%, 720px);
+  gap: 12px;
+}
+
+#draw-panel:fullscreen .assign-row {
+  padding: 14px 22px;
+}
+
+#draw-panel:fullscreen .assign-prize {
+  font-size: 22px;
+}
+
+#draw-panel:fullscreen .assign-id {
+  font-size: 40px;
 }
 
 /* ---------- 页脚 ---------- */
@@ -1062,11 +1188,15 @@ a {
   }
 
   .stage {
-    height: clamp(300px, 42vh, 420px);
+    height: clamp(280px, 40vh, 400px);
   }
 
   .stage-name {
     font-size: clamp(46px, 13vw, 96px);
+  }
+
+  .assign-list {
+    width: 86%;
   }
 
   .ring {
@@ -1103,6 +1233,19 @@ a {
   .stage-prize,
   .stage-hint {
     font-size: 11px;
+  }
+
+  .assign-row {
+    gap: 9px;
+    padding: 8px 12px;
+  }
+
+  .assign-prize {
+    font-size: 14px;
+  }
+
+  .assign-id {
+    font-size: 22px;
   }
 
   .controls-side {
