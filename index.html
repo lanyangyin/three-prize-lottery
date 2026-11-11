@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>三人抽奖器 · 3 个奖品 · 5~50 人</title>
-  <meta name="description" content="只有 3 个奖品、5~50 人的现场抽奖工具：三等奖 → 二等奖 → 一等奖，中奖不重复，人不到场可重抽，全部在浏览器本地运行。">
+  <title>三人抽奖器 · 3 个平级奖品 · 5~50 人</title>
+  <meta name="description" content="3 个平级奖品、5~50 人的现场抽奖工具：依次抽出 3 位中奖者，每人最多中一个，人不到场可重抽，全部在浏览器本地运行。">
   <meta name="theme-color" content="#0b0d14">
   <meta property="og:type" content="website">
   <meta property="og:title" content="三人抽奖器">
-  <meta property="og:description" content="3 个奖品 · 5~50 人 · 中奖不重复。深色舞台 + 滚动揭晓的静态抽奖页。">
+  <meta property="og:description" content="3 个平级奖品 · 5~50 人 · 每人最多中一个。深色舞台 + 滚动揭晓的静态抽奖页。">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/styles.css">
 </head>
@@ -19,7 +19,7 @@
         <span class="brand-mark" aria-hidden="true">抽</span>
         <div class="brand-text">
           <h1>三人抽奖器</h1>
-          <p>3 个奖品 · 5~50 人 · 中奖不重复</p>
+          <p>3 个平级奖品 · 5~50 人 · 每人最多中一个</p>
         </div>
       </div>
       <div class="header-meta">
@@ -66,9 +66,9 @@
         <div class="stage" id="stage">
           <div class="ring" aria-hidden="true"></div>
           <canvas id="confetti" aria-hidden="true"></canvas>
-          <p class="stage-prize" id="stage-prize">三等奖 → 二等奖 → 一等奖</p>
+          <p class="stage-prize" id="stage-prize">三个平级奖品</p>
           <div class="stage-name" id="stage-name">准备好了吗？</div>
-          <p class="stage-hint" id="stage-hint">按空格或点「开始抽奖」</p>
+          <p class="stage-hint" id="stage-hint">每人最多中一个 · 按空格开始</p>
         </div>
 
         <div class="controls">
@@ -85,16 +85,16 @@
         </div>
 
         <div class="cards" id="cards">
-          <article class="card" data-prize="一等奖">
-            <span class="card-prize">一等奖</span>
+          <article class="card" data-slot="第 1 位">
+            <span class="card-prize">中奖者 1</span>
             <span class="card-name">—</span>
           </article>
-          <article class="card" data-prize="二等奖">
-            <span class="card-prize">二等奖</span>
+          <article class="card" data-slot="第 2 位">
+            <span class="card-prize">中奖者 2</span>
             <span class="card-name">—</span>
           </article>
-          <article class="card" data-prize="三等奖">
-            <span class="card-prize">三等奖</span>
+          <article class="card" data-slot="第 3 位">
+            <span class="card-prize">中奖者 3</span>
             <span class="card-name">—</span>
           </article>
         </div>
@@ -103,7 +103,7 @@
 
         <div class="statusbar">
           <span id="status-text" role="status">就绪 · 按空格或点「开始抽奖」</span>
-          <span class="status-tip">每人中奖概率 = 3 ÷ 人数</span>
+          <span class="status-tip">3 个平级奖品 · 每人最多中一个</span>
         </div>
       </section>
     </main>

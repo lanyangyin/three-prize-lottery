@@ -681,6 +681,7 @@ a {
 }
 
 .card {
+  --accent: var(--gold);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -701,18 +702,6 @@ a {
   height: 3px;
   background: var(--accent, var(--gold));
   opacity: 0.85;
-}
-
-.card[data-prize="一等奖"] {
-  --accent: var(--gold);
-}
-
-.card[data-prize="二等奖"] {
-  --accent: var(--blue);
-}
-
-.card[data-prize="三等奖"] {
-  --accent: var(--green);
 }
 
 .card-prize {

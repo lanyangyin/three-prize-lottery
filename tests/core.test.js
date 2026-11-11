@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  PRIZES,
+  SLOTS,
   MIN_PLAYERS,
   DrawError,
   Round,
@@ -55,15 +55,15 @@ test('少于 4 人无法开始，4 人可以', function () {
   assert.equal(round.remaining, 4);
 });
 
-test('4~50 人时三个奖中奖者不重复且都属于名单', function () {
+test('三个奖品平级：4~50 人依次抽出 3 位不同中奖者', function () {
   for (let n = MIN_PLAYERS; n <= 50; n += 1) {
     const names = Array.from({ length: n }, function (_, i) { return 'P' + i; });
     const round = seededRound(names, n * 977);
     const winners = [];
     for (let i = 0; i < 3; i += 1) {
       const result = round.draw();
+      assert.equal(result.slot, SLOTS[i]);
       winners.push(result.name);
-      assert.equal(result.prize, PRIZES[i]);
     }
     assert.equal(new Set(winners).size, 3, n + ' 人时出现重复中奖');
     winners.forEach(function (name) {
@@ -71,11 +71,11 @@ test('4~50 人时三个奖中奖者不重复且都属于名单', function () {
     });
     assert.equal(round.remaining, n - 3);
     assert.equal(round.finished, true);
-    assert.equal(round.nextPrize, null);
+    assert.equal(round.nextSlot, null);
   }
 });
 
-test('第四个奖会被拒绝', function () {
+test('第四位中奖者会被拒绝', function () {
   const round = seededRound(['A', 'B', 'C', 'D', 'E'], 1);
   round.draw();
   round.draw();
@@ -92,8 +92,8 @@ test('中奖分布接近 3/n', function () {
     round.draw();
     round.draw();
     round.draw();
-    Object.keys(round.winners).forEach(function (prize) {
-      counts[round.winners[prize]] += 1;
+    Object.keys(round.winners).forEach(function (slot) {
+      counts[round.winners[slot]] += 1;
     });
   }
   names.forEach(function (name) {
@@ -107,9 +107,9 @@ test('重抽会作废旧中奖者并从剩余名单中换人', function () {
   const round = seededRound(names, 42);
   const first = round.draw();
   const again = round.redraw();
-  assert.equal(again.prize, first.prize);
+  assert.equal(again.slot, first.slot);
   assert.notEqual(again.name, first.name);
-  assert.equal(round.winners[first.prize], again.name);
+  assert.equal(round.winners[first.slot], again.name);
   assert.deepEqual(round.excluded, [first.name]);
   assert.ok(!Object.values(round.winners).includes(first.name));
 });
@@ -140,7 +140,7 @@ test('snapshot / fromSnapshot 能恢复进度', function () {
   const restored = Round.fromSnapshot(round.snapshot());
   assert.deepEqual(restored.names, round.names);
   assert.deepEqual(Object.assign({}, restored.winners), Object.assign({}, round.winners));
-  assert.equal(restored.nextPrize, round.nextPrize);
+  assert.equal(restored.nextSlot, round.nextSlot);
   assert.equal(restored.remaining, round.remaining);
 });
 
@@ -148,23 +148,24 @@ test('fromSnapshot 只接受连续的前缀结果', function () {
   const names = ['A', 'B', 'C', 'D', 'E'];
   const restored = Round.fromSnapshot({
     names: names,
-    winners: { 三等奖: '不存在的人', 二等奖: 'B', 一等奖: 'C' }
+    winners: { 第1位: '不存在的人', 第2位: 'B', 第3位: 'C' }
   });
   assert.deepEqual(Object.assign({}, restored.winners), {});
-  assert.equal(restored.nextPrize, '三等奖');
+  assert.equal(restored.nextSlot, SLOTS[0]);
 });
 
-test('结果按一等奖到三等奖输出', function () {
+test('结果按第 1 位到第 3 位输出，没有高低排序', function () {
   const round = seededRound(['A', 'B', 'C', 'D', 'E'], 3);
   round.draw();
   round.draw();
   round.draw();
-  assert.deepEqual(round.results().map(function (item) { return item.prize; }),
-    ['一等奖', '二等奖', '三等奖']);
+  assert.deepEqual(round.results().map(function (item) { return item.slot; }),
+    SLOTS);
 });
 
-test('中奖记录包含人数、概率、名单和作废信息', function () {
-  const round = seededRound(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'], 12);
+test('中奖记录标明平级奖品与每人最多一个', function () {
+  const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  const round = seededRound(names, 12);
   round.draw();
   round.draw();
   round.draw();
@@ -173,7 +174,8 @@ test('中奖记录包含人数、概率、名单和作废信息', function () {
   assert.match(text, /抽奖时间：2026-11-12 09:30:00/);
   assert.match(text, /参与人数：10/);
   assert.match(text, /每人中奖概率：30\.0%/);
-  assert.match(text, /一等奖：/);
+  assert.match(text, /奖品设置：3 个平级奖品，每人最多中一个/);
+  assert.match(text, /第 1 位中奖者：/);
   assert.match(text, /作废（中奖者未到场）：/);
 });
 

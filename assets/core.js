@@ -1,4 +1,8 @@
-/* 三人抽奖器 · 静态网页 */
+/* 三人抽奖器 · 静态网页
+ *
+ * 规则：三个奖品位完全平级，依次抽出 3 位中奖者；
+ *       中奖者立即从名单移除，每人最多中一个。
+ */
 (function (root, factory) {
   var api = factory();
   if (typeof module === 'object' && module.exports) {
@@ -9,8 +13,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  var PRIZES = ['三等奖', '二等奖', '一等奖'];
-  var MIN_PLAYERS = 4;
+  // 三个平级名额，编号只表示抽奖顺序，没有高低之分
+  var SLOTS = ['第 1 位', '第 2 位', '第 3 位'];
+  var MIN_PLAYERS = 4; // 3 位中奖者 + 至少 1 位备选
   var NAME_SPLIT = /[\n\r,，、;；\t]+/;
 
   function DrawError(message) {
@@ -62,7 +67,7 @@
     if (this.names.length < MIN_PLAYERS) {
       throw new DrawError('至少需要 ' + MIN_PLAYERS + ' 位参与者（当前 ' + this.names.length + ' 位）');
     }
-    this.prizes = PRIZES.slice();
+    this.slots = SLOTS.slice();
     this._rng = typeof randomFn === 'function' ? randomFn : randomIndex;
     this._pool = this.names.slice();
     this._next = 0;
@@ -74,21 +79,21 @@
     remaining: {
       get: function () { return this._pool.length; }
     },
-    nextPrize: {
-      get: function () { return this._next < this.prizes.length ? this.prizes[this._next] : null; }
+    nextSlot: {
+      get: function () { return this._next < this.slots.length ? this.slots[this._next] : null; }
     },
-    lastPrize: {
-      get: function () { return this._next > 0 ? this.prizes[this._next - 1] : null; }
+    lastSlot: {
+      get: function () { return this._next > 0 ? this.slots[this._next - 1] : null; }
     },
     finished: {
-      get: function () { return this._next >= this.prizes.length; }
+      get: function () { return this._next >= this.slots.length; }
     }
   });
 
   Round.prototype.draw = function () {
-    var prize = this.nextPrize;
-    if (!prize) {
-      throw new DrawError('三个奖都已经抽完了');
+    var slot = this.nextSlot;
+    if (!slot) {
+      throw new DrawError('三个奖品都已经抽完了');
     }
     if (!this._pool.length) {
       throw new DrawError('名单已抽空，没有可抽的人了');
@@ -98,14 +103,14 @@
       throw new Error('随机数生成器返回了无效下标');
     }
     var name = this._pool.splice(index, 1)[0];
-    this.winners[prize] = name;
+    this.winners[slot] = name;
     this._next += 1;
-    return { prize: prize, name: name };
+    return { slot: slot, name: name };
   };
 
   Round.prototype.redraw = function () {
-    var prize = this.lastPrize;
-    if (!prize) {
+    var slot = this.lastSlot;
+    if (!slot) {
       throw new DrawError('还没有抽出任何中奖者');
     }
     if (!this._pool.length) {
@@ -115,26 +120,26 @@
     if (!Number.isInteger(index) || index < 0 || index >= this._pool.length) {
       throw new Error('随机数生成器返回了无效下标');
     }
-    var oldName = this.winners[prize];
+    var oldName = this.winners[slot];
     var name = this._pool.splice(index, 1)[0];
     this.excluded.push(oldName);
-    this.winners[prize] = name;
-    return { prize: prize, name: name };
+    this.winners[slot] = name;
+    return { slot: slot, name: name };
   };
 
   Round.prototype.results = function () {
     var self = this;
-    return this.prizes.slice().reverse().filter(function (prize) {
-      return Boolean(self.winners[prize]);
-    }).map(function (prize) {
-      return { prize: prize, name: self.winners[prize] };
+    return this.slots.filter(function (slot) {
+      return Boolean(self.winners[slot]);
+    }).map(function (slot) {
+      return { slot: slot, name: self.winners[slot] };
     });
   };
 
   Round.prototype.snapshot = function () {
     var winners = {};
-    Object.keys(this.winners).forEach(function (prize) {
-      winners[prize] = this.winners[prize];
+    Object.keys(this.winners).forEach(function (slot) {
+      winners[slot] = this.winners[slot];
     }, this);
     return {
       names: this.names.slice(),
@@ -152,11 +157,11 @@
     var won = Object.create(null);
     var sequential = true;
 
-    PRIZES.forEach(function (prize) {
+    SLOTS.forEach(function (slot) {
       if (!sequential) return;
-      var name = source.winners ? source.winners[prize] : null;
+      var name = source.winners ? source.winners[slot] : null;
       if (name && names.indexOf(name) !== -1 && excluded.indexOf(name) === -1 && !won[name]) {
-        winners[prize] = name;
+        winners[slot] = name;
         won[name] = true;
       } else {
         sequential = false;
@@ -207,15 +212,16 @@
   function reportText(round, when) {
     var date = toDate(when);
     var total = round.names.length;
-    var rate = (round.prizes.length / total * 100).toFixed(1);
+    var rate = (round.slots.length / total * 100).toFixed(1);
     var lines = [
       '抽奖时间：' + formatTime(date),
       '参与人数：' + total,
       '每人中奖概率：' + rate + '%',
+      '奖品设置：3 个平级奖品，每人最多中一个',
       ''
     ];
     round.results().forEach(function (item) {
-      lines.push(item.prize + '：' + item.name);
+      lines.push(item.slot + '中奖者：' + item.name);
     });
     if (round.excluded.length) {
       lines.push('', '作废（中奖者未到场）：' + round.excluded.join('、'));
@@ -224,7 +230,7 @@
   }
 
   return {
-    PRIZES: PRIZES,
+    SLOTS: SLOTS,
     MIN_PLAYERS: MIN_PLAYERS,
     DrawError: DrawError,
     Round: Round,
