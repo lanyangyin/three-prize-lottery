@@ -120,6 +120,65 @@
     return Math.floor(Math.random() * n);
   }
 
+  function overlapArea(a, b) {
+    var w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    var h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (w <= 0 || h <= 0) return 0;
+    return w * h;
+  }
+
+  /**
+   * 三个框停下后，各选一个覆盖面积最大的编号。
+   * 为了保证"每人最多中一个"，三个框必须落到不同编号上：
+   * 在所有"框→不同编号"的分配中取总覆盖面积最大的一组；
+   * 面积并列时用 randomFn 随机挑一组。
+   */
+  function selectWinners(frames, tiles, randomFn) {
+    if (!Array.isArray(frames) || frames.length !== WINNER_COUNT) {
+      throw new DrawError('需要 ' + WINNER_COUNT + ' 个选框');
+    }
+    if (!Array.isArray(tiles) || tiles.length < WINNER_COUNT) {
+      throw new DrawError('编号数量不足');
+    }
+    var rng = typeof randomFn === 'function' ? randomFn : Math.random;
+    var areas = frames.map(function (frame) {
+      return tiles.map(function (tile) {
+        return overlapArea(frame, tile);
+      });
+    });
+
+    var bestScore = -1;
+    var best = null;
+    var ties = 0;
+
+    for (var i = 0; i < tiles.length; i += 1) {
+      for (var j = 0; j < tiles.length; j += 1) {
+        if (j === i) continue;
+        for (var k = 0; k < tiles.length; k += 1) {
+          if (k === i || k === j) continue;
+          var score = areas[0][i] + areas[1][j] + areas[2][k];
+          if (score > bestScore + 1e-9) {
+            bestScore = score;
+            best = [i, j, k];
+            ties = 1;
+          } else if (Math.abs(score - bestScore) <= 1e-9) {
+            ties += 1;
+            if (rng() < 1 / ties) best = [i, j, k];
+          }
+        }
+      }
+    }
+
+    return best.map(function (tileIndex, frameIndex) {
+      return {
+        frameIndex: frameIndex,
+        tileIndex: tileIndex,
+        id: tiles[tileIndex].id,
+        area: areas[frameIndex][tileIndex]
+      };
+    });
+  }
+
   function Round(ids, prizes, randomFn) {
     this.ids = cleanIds(ids);
     this.prizes = cleanPrizeNames(prizes || DEFAULT_PRIZES);
@@ -165,6 +224,47 @@
     var id = this._pool.splice(index, 1)[0];
     this.winners.push(id);
     return { index: this.winners.length, id: id };
+  };
+
+  /**
+   * 直接指定三个中奖编号（用于选框停下后的选择结果）。
+   * 三个编号必须存在、互不相同，且不属于已作废名单。
+   */
+  Round.prototype.setWinners = function (ids) {
+    if (this.winners.length) {
+      throw new DrawError('已经抽出中奖者了');
+    }
+    if (this.assigned) {
+      throw new DrawError('奖品已经分配过了');
+    }
+    if (!Array.isArray(ids) || ids.length !== WINNER_COUNT) {
+      throw new DrawError('需要 ' + WINNER_COUNT + ' 位中奖者');
+    }
+    var seen = Object.create(null);
+    var clean = [];
+    ids.forEach(function (raw, index) {
+      var id = String(raw == null ? '' : raw).trim();
+      if (!ID_PATTERN.test(id)) {
+        throw new DrawError('第 ' + (index + 1) + ' 位中奖编号不是数字');
+      }
+      if (seen[id]) {
+        throw new DrawError('中奖编号不能重复');
+      }
+      if (this.ids.indexOf(id) === -1) {
+        throw new DrawError('中奖编号不在参与者中：' + id);
+      }
+      if (this.excluded.indexOf(id) !== -1) {
+        throw new DrawError('该编号已作废：' + id);
+      }
+      seen[id] = true;
+      clean.push(id);
+    }, this);
+
+    this.winners = clean;
+    this._pool = this.ids.filter(function (id) {
+      return clean.indexOf(id) === -1;
+    });
+    return this.winners.slice();
   };
 
   Round.prototype.redrawLast = function () {
@@ -317,8 +417,8 @@
       '参与人数：' + total,
       '每人中奖概率：' + rate + '%',
       '奖品设置：' + round.prizes.join('、') + '（三个奖品平级，每人最多中一个）',
-      '抽奖方式：先抽 3 位中奖者，再随机分配奖品',
-      '中奖编号（按抽出顺序）：' + winnersText,
+      '抽奖方式：三个选框随机弹射，各选覆盖面积最大的编号；再随机分配奖品',
+      '中奖编号（按框序号）：' + winnersText,
       ''
     ];
     if (round.assigned) {
@@ -346,6 +446,8 @@
     cleanIdList: cleanIdList,
     cleanPrizeNames: cleanPrizeNames,
     randomIndex: randomIndex,
+    overlapArea: overlapArea,
+    selectWinners: selectWinners,
     reportText: reportText,
     formatTime: formatTime,
     formatStamp: formatStamp,

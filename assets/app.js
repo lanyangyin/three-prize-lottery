@@ -1,16 +1,16 @@
 /* 三人抽奖器 · 页面交互
  *
- * 两步抽奖：
- *   1. 先抽出 3 位数字编号中奖者（这一步不出现奖品）；
- *   2. 再把 3 个平级但内容不同的奖品随机分配给这 3 位中奖者。
- * 每位中奖者只获得一个奖品。
+ * 第一步：把数字编号铺在板上，三个选框随机弹射、互相碰撞，
+ *         停下后每个框选覆盖面积最大的编号（保证三人不同）。
+ * 第二步：把三个平级但不同的奖品随机分配给这三位中奖者。
  */
 (function () {
   'use strict';
 
   var Core = window.LotteryCore;
-  if (!Core) {
-    console.error('LotteryCore 未加载');
+  var Board = window.LotteryBoard && window.LotteryBoard.Board;
+  if (!Core || !Board) {
+    console.error('LotteryCore / LotteryBoard 未加载');
     return;
   }
 
@@ -25,8 +25,9 @@
 
   var STORAGE_KEY = 'three-prize-lottery.v1';
   var SAMPLE_IDS = [
-    '001', '002', '003', '004', '005', '006',
-    '007', '008', '009', '010', '011', '012'
+    '20260000001', '20260000002', '20260000003', '20260000004',
+    '20260000005', '20260000006', '20260000007', '20260000008',
+    '20260000009', '20260000010', '20260000011', '20260000012'
   ];
   var REDUCED = window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -34,9 +35,8 @@
 
   var state = {
     round: null,
-    rolling: false,
+    busy: false,
     assigning: false,
-    pendingIndex: null,
     history: [],
     startedAt: null,
     recordId: null
@@ -64,10 +64,7 @@
     step1: $('step-1'),
     step2: $('step-2'),
     stage: $('stage'),
-    stagePrize: $('stage-prize'),
-    stageName: $('stage-name'),
-    assignList: $('assign-list'),
-    stageHint: $('stage-hint'),
+    boardCanvas: $('board'),
     canvas: $('confetti'),
     draw: $('btn-draw'),
     drawLabel: $('draw-label'),
@@ -92,6 +89,8 @@
     copy: $('btn-copy'),
     year: $('footer-year')
   };
+
+  var board = new Board(el.boardCanvas);
 
   /* ---------------- 工具 ---------------- */
 
@@ -182,6 +181,34 @@
     });
   }
 
+  function syncBoardIdle() {
+    if (state.round) return;
+    board.setIds(parsedInput().ids);
+    board.setSelected([]);
+    board.setPrizeLabels(['', '', '']);
+  }
+
+  function shuffleIds(ids) {
+    var list = ids.slice();
+    for (var i = list.length - 1; i > 0; i -= 1) {
+      var j = Core.randomIndex(i + 1);
+      var tmp = list[i];
+      list[i] = list[j];
+      list[j] = tmp;
+    }
+    return list;
+  }
+
+  function sameIdSet(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    var left = a.slice().sort();
+    var right = b.slice().sort();
+    for (var i = 0; i < left.length; i += 1) {
+      if (left[i] !== right[i]) return false;
+    }
+    return true;
+  }
+
   /* ---------------- 本地存储 ---------------- */
 
   function loadSaved() {
@@ -221,11 +248,23 @@
 
   function persist() {
     var round = state.round;
+    var frames = null;
+    var tileOrder = null;
+    if (round && round.winners.length) {
+      frames = board.getFrames().map(function (frame) {
+        return {
+          x: Math.round(frame.x * 10) / 10,
+          y: Math.round(frame.y * 10) / 10
+        };
+      });
+      tileOrder = board.ids.slice();
+    }
     var data = {
-      v: 5,
+      v: 6,
       idsText: round ? round.ids.join('\n') : el.names.value,
       prizes: round ? round.prizes.slice() : readPrizeInputs(),
       round: round && round.winners.length ? round.snapshot() : null,
+      board: frames ? { frames: frames, tileOrder: tileOrder } : null,
       startedAt: state.startedAt,
       recordId: state.recordId,
       history: state.history
@@ -271,19 +310,23 @@
   function updateInfo() {
     var round = state.round;
     if (!round) {
-      el.next.textContent = '第一步 · 抽 3 位中奖者';
+      el.next.textContent = '第一步 · 弹射选框选人';
       el.remain.textContent = '待抽奖 ' + parsedInput().ids.length + ' 个编号';
       return;
     }
     if (!round.allDrawn) {
-      el.next.textContent = '第一步 · 第 ' + (round.drawnCount + 1) + ' 位 / 共 3 位';
-      el.remain.textContent = '已抽 ' + round.drawnCount + '/3 · 剩余 ' +
-        round.remaining + ' 个编号';
+      if (round.winners.length) {
+        el.next.textContent = '第一步 · 已选出 ' + round.winners.length + '/3';
+        el.remain.textContent = '可以重新弹射';
+      } else {
+        el.next.textContent = '第一步 · 选框弹射中';
+        el.remain.textContent = '等待三个框停下';
+      }
       return;
     }
-    if (!round.assigned) {
+    if (!round.assigned || state.assigning) {
       el.next.textContent = '第二步 · 随机分配奖品';
-      el.remain.textContent = '3 位中奖者已就位';
+      el.remain.textContent = '3 位中奖者已选出';
       return;
     }
     el.next.textContent = '分配完成';
@@ -293,7 +336,7 @@
   function updateSteps() {
     var round = state.round;
     var allDrawn = Boolean(round && round.allDrawn);
-    var assigned = Boolean(round && round.assigned);
+    var assigned = Boolean(round && round.assigned && !state.assigning);
 
     el.step1.classList.toggle('is-active', !allDrawn);
     el.step1.classList.toggle('is-done', allDrawn);
@@ -311,8 +354,6 @@
 
     for (var i = 0; i < WINNER_COUNT; i += 1) {
       var id = round ? (round.winners[i] || '') : '';
-      if (state.pendingIndex === i + 1) id = '';
-
       var labelText = showPrize ? round.assignments[i].prize : '中奖者 ' + (i + 1);
       var card = document.createElement('article');
       card.className = 'card' + (id ? ' filled' : '');
@@ -332,39 +373,6 @@
     }
   }
 
-  function renderAssignList() {
-    var round = state.round;
-    if (round && round.assigned && !state.assigning) {
-      el.assignList.textContent = '';
-      round.assignments.forEach(function (item) {
-        var row = document.createElement('div');
-        row.className = 'assign-row';
-
-        var prize = document.createElement('span');
-        prize.className = 'assign-prize';
-        prize.textContent = item.prize;
-
-        var arrow = document.createElement('span');
-        arrow.className = 'assign-arrow';
-        arrow.textContent = '→';
-
-        var id = document.createElement('span');
-        id.className = 'assign-id';
-        id.textContent = item.id;
-
-        row.appendChild(prize);
-        row.appendChild(arrow);
-        row.appendChild(id);
-        el.assignList.appendChild(row);
-      });
-      el.assignList.hidden = false;
-      el.stageName.hidden = true;
-    } else {
-      el.assignList.hidden = true;
-      el.stageName.hidden = false;
-    }
-  }
-
   function updateExcluded() {
     var excluded = state.round ? state.round.excluded : [];
     if (excluded.length) {
@@ -378,17 +386,17 @@
 
   function updateButtons() {
     var round = state.round;
-    var busy = state.rolling || state.assigning;
+    var busy = state.busy;
     var allDrawn = Boolean(round && round.allDrawn);
     var assigned = Boolean(round && round.assigned);
     var label;
     var disabled;
 
     if (busy) {
-      label = state.assigning ? '分配中…' : '抽取中…';
+      label = state.assigning ? '分配中…' : '弹射中…';
       disabled = true;
     } else if (!allDrawn) {
-      label = '抽取第 ' + ((round ? round.drawnCount : 0) + 1) + ' 位';
+      label = '开始弹射';
       disabled = false;
     } else if (!assigned) {
       label = '随机分配奖品';
@@ -402,8 +410,7 @@
     el.drawLabel.textContent = label;
     el.drawKbd.hidden = disabled;
 
-    el.redraw.disabled = busy || !round || !round.winners.length ||
-      assigned || round.remaining === 0;
+    el.redraw.disabled = busy || !round || !allDrawn || assigned;
     el.reset.disabled = busy;
     el.exportBtn.disabled = busy || !assigned;
   }
@@ -415,7 +422,6 @@
     updateInfo();
     updateSteps();
     renderCards();
-    renderAssignList();
     updateExcluded();
     updateButtons();
   }
@@ -428,37 +434,6 @@
     el.prizeInputs.forEach(function (input) {
       input.disabled = locked;
     });
-  }
-
-  function renderIdleStage() {
-    el.stageName.hidden = false;
-    el.assignList.hidden = true;
-    el.stageName.className = 'stage-name is-idle';
-    el.stageName.textContent = '准备好了吗？';
-    el.stagePrize.textContent = '两步抽奖';
-    el.stageHint.textContent = '先抽 3 位中奖者 · 按空格开始';
-    el.live.textContent = '';
-  }
-
-  function renderRestoredStage() {
-    var round = state.round;
-    if (!round || !round.winners.length) {
-      renderIdleStage();
-      return;
-    }
-    if (round.assigned) {
-      el.stagePrize.textContent = '奖品分配结果';
-      el.stageHint.textContent = '每位中奖者获得一个奖品';
-      return;
-    }
-    el.stageName.hidden = false;
-    el.assignList.hidden = true;
-    el.stageName.className = 'stage-name is-winner';
-    el.stageName.textContent = round.lastWinner;
-    el.stagePrize.textContent = '第 ' + round.winners.length + ' 位中奖者';
-    el.stageHint.textContent = round.allDrawn
-      ? '三位中奖者已就位 · 下一步分配奖品'
-      : '恭喜！';
   }
 
   function renderHistory() {
@@ -486,7 +461,7 @@
 
       var winners = document.createElement('span');
       winners.className = 'h-first';
-      winners.textContent = rec.winners.join('、');
+      winners.textContent = rec.winners.length + ' 位中奖者';
 
       summary.appendChild(date);
       summary.appendChild(total);
@@ -604,70 +579,6 @@
 
   /* ---------------- 抽奖 ---------------- */
 
-  function rollIds(pool) {
-    return new Promise(function (resolve) {
-      if (prefersReduced()) {
-        window.setTimeout(resolve, 220);
-        return;
-      }
-      var duration = 1800;
-      var start = performance.now();
-      var lastSwap = 0;
-
-      function frame(now) {
-        var t = Math.min((now - start) / duration, 1);
-        if (t >= 1) {
-          resolve();
-          return;
-        }
-        var delay = 45 + 190 * Math.pow(t, 3);
-        if (now - lastSwap >= delay) {
-          lastSwap = now;
-          el.stageName.textContent = pool[Math.floor(Math.random() * pool.length)];
-        }
-        window.requestAnimationFrame(frame);
-      }
-
-      window.requestAnimationFrame(frame);
-    });
-  }
-
-  function playWinnerReveal(result, options) {
-    var redraw = Boolean(options && options.redraw);
-    state.rolling = true;
-    updateButtons();
-
-    el.assignList.hidden = true;
-    el.stageName.hidden = false;
-    el.stageName.className = 'stage-name is-rolling';
-    el.stagePrize.textContent = '第 ' + result.index + ' 位中奖者';
-    el.stageHint.textContent = '正在抽取……';
-    el.stageName.textContent = state.round.ids[
-      Math.floor(Math.random() * state.round.ids.length)
-    ];
-
-    return rollIds(state.round.ids).then(function () {
-      state.rolling = false;
-      state.pendingIndex = null;
-      el.stageName.className = 'stage-name is-winner';
-      el.stageName.textContent = result.id;
-      el.stagePrize.textContent = '第 ' + result.index + ' 位中奖者';
-      el.stageHint.textContent = state.round.allDrawn
-        ? '三位中奖者已就位 · 下一步分配奖品'
-        : '恭喜！';
-      el.live.textContent = '第 ' + result.index + ' 位中奖者：' + result.id;
-
-      updateAll();
-      setStatus('第 ' + result.index + ' 位中奖者：' + result.id);
-      fireConfetti();
-      persist();
-
-      if (redraw && state.round.allDrawn) {
-        showToast('已重抽最后一位，可以分配奖品了', 'success');
-      }
-    });
-  }
-
   function createRound() {
     var problem = prizeProblem();
     if (problem) {
@@ -691,56 +602,69 @@
     }
     state.startedAt = new Date().toISOString();
     state.recordId = null;
-    state.pendingIndex = null;
+    state.busy = false;
     state.assigning = false;
     setInputLocked(true);
     updateIdError();
     updatePrizeError();
+
+    board.setIds(state.round.ids);
+    board.setSelected([]);
+    board.setPrizeLabels(['', '', '']);
     updateAll();
     persist();
-    setStatus('编号已锁定 · 开始抽人');
+    setStatus('编号已锁定 · 三个框准备弹射');
     return true;
   }
 
-  function drawWinner() {
-    var result;
-    try {
-      result = state.round.draw();
-    } catch (err) {
-      showToast(err.message, 'error');
-      return;
-    }
-    state.pendingIndex = result.index;
-    persist();
-    updateAll();
-    playWinnerReveal(result).catch(function (err) {
-      state.rolling = false;
-      state.pendingIndex = null;
+  function launchFrames() {
+    if (state.busy || !state.round || state.round.assigned) return;
+    state.busy = true;
+    state.assigning = false;
+    updateButtons();
+    board.setSelected([]);
+    board.setPrizeLabels(['', '', '']);
+    setStatus('三个框正在弹射，等待它们停下……');
+
+    // 弹射前重新随机排列编号位置，保证每个编号机会相同
+    board.launch(shuffleIds(state.round.ids)).then(function (result) {
+      if (!result) {
+        state.busy = false;
+        updateAll();
+        return;
+      }
+      var picks;
+      try {
+        picks = Core.selectWinners(result.frames, result.tiles);
+        state.round.setWinners(picks.map(function (pick) { return pick.id; }));
+      } catch (err) {
+        state.busy = false;
+        updateAll();
+        showToast('选框结果无效：' + err.message, 'error');
+        return;
+      }
+
+      board.setSelected(state.round.winners);
+      board.setPrizeLabels(['', '', '']);
+      state.busy = false;
       updateAll();
-      showToast('抽奖出错：' + err.message, 'error');
+      setStatus('三位中奖者已选出 · 下一步随机分配奖品');
+      el.live.textContent = state.round.winners.map(function (id, index) {
+        return '第 ' + (index + 1) + ' 位：' + id;
+      }).join('；');
+      fireConfetti();
+      persist();
+    }).catch(function (err) {
+      state.busy = false;
+      state.assigning = false;
+      updateAll();
+      showToast('弹射出错：' + err.message, 'error');
     });
-  }
-
-  function startPrimary() {
-    if (state.rolling || state.assigning) return;
-
-    if (!state.round) {
-      if (!createRound()) return;
-    }
-    if (!state.round.allDrawn) {
-      drawWinner();
-      return;
-    }
-    if (!state.round.assigned) {
-      assignPrizesFlow();
-      return;
-    }
-    showToast('本轮奖品已经分配完成，点「重置」开始新一轮');
   }
 
   function assignPrizesFlow() {
     var round = state.round;
-    if (!round || state.rolling || state.assigning || !round.allDrawn || round.assigned) return;
+    if (!round || state.busy || !round.allDrawn || round.assigned) return;
 
     var assignments;
     try {
@@ -750,85 +674,71 @@
       return;
     }
 
+    state.busy = true;
     state.assigning = true;
     persist();
     updateAll();
+    setStatus('正在把三个奖品随机分配给三位中奖者……');
+    board.setPrizeLabels(['', '', '']);
 
-    el.stageName.hidden = false;
-    el.assignList.hidden = true;
-    el.stageName.className = 'stage-name is-rolling';
-    el.stageName.textContent = '随机分配中…';
-    el.stagePrize.textContent = '随机分配奖品';
-    el.stageHint.textContent = '正在把三个奖品随机分给三位中奖者……';
-
-    var start = performance.now();
     var prizes = round.prizes;
+    var flicker = window.setInterval(function () {
+      board.setPrizeLabels([
+        prizes[Math.floor(Math.random() * prizes.length)],
+        prizes[Math.floor(Math.random() * prizes.length)],
+        prizes[Math.floor(Math.random() * prizes.length)]
+      ]);
+    }, 110);
 
-    function frame(now) {
-      if (!state.assigning) return;
-      var t = Math.min((now - start) / 1300, 1);
-      if (t >= 1) {
-        finishAssign(assignments);
-        return;
-      }
-      el.stageName.textContent = prizes[Math.floor(Math.random() * prizes.length)];
-      window.requestAnimationFrame(frame);
-    }
-
-    function finishAssign(list) {
+    window.setTimeout(function () {
+      window.clearInterval(flicker);
+      state.busy = false;
       state.assigning = false;
-      el.stageName.classList.remove('is-rolling');
-      el.stagePrize.textContent = '奖品分配结果';
-      el.stageHint.textContent = '每位中奖者获得一个奖品';
-      el.live.textContent = list.map(function (item) {
-        return item.prize + '：' + item.id;
-      }).join('；');
-
+      board.setPrizeLabels(['', '', '']);
       updateAll();
       setStatus('奖品分配完成');
+      el.live.textContent = assignments.map(function (item) {
+        return item.prize + '：' + item.id;
+      }).join('；');
       fireConfetti();
       saveRecord();
       showToast('奖品分配完成，记录已保存到「历史记录」', 'success');
       persist();
-    }
-
-    window.requestAnimationFrame(frame);
+    }, 1300);
   }
 
-  function startRedraw() {
-    if (state.rolling || state.assigning || !state.round) return;
-    var round = state.round;
-    if (!round.winners.length || round.assigned) return;
-    if (round.remaining === 0) {
-      showToast('没有可替换的备选编号了', 'error');
+  function startPrimary() {
+    if (state.busy) return;
+    if (!state.round) {
+      if (!createRound()) return;
+    }
+    if (!state.round.allDrawn) {
+      launchFrames();
       return;
     }
-    var oldId = round.lastWinner;
+    if (!state.round.assigned) {
+      assignPrizesFlow();
+      return;
+    }
+    showToast('本轮奖品已经分配完成，点「重置」开始新一轮');
+  }
 
+  function relaunch() {
+    if (state.busy || !state.round || !state.round.allDrawn || state.round.assigned) return;
     confirmDialog(
-      '重新抽取最后一位',
-      '最后一位中奖者「' + oldId + '」无法到场？\n作废后将从剩余 ' +
-        round.remaining + ' 个编号中重抽一位，原中奖者不再参与本轮。',
-      '作废并重抽'
+      '重新弹射',
+      '重新弹射会清空本次选出的 3 位中奖者，三个框会重新随机弹射。确定吗？',
+      '重新弹射'
     ).then(function (ok) {
       if (!ok) return;
-      var result;
-      try {
-        result = round.redrawLast();
-      } catch (err) {
-        showToast(err.message, 'error');
-        return;
-      }
-      state.pendingIndex = result.index;
+      state.round = new Round(state.round.ids, state.round.prizes);
+      state.recordId = null;
+      state.assigning = false;
+      board.setSelected([]);
+      board.setPrizeLabels(['', '', '']);
       updateAll();
-      setStatus('「' + oldId + '」已作废，重新抽取最后一位……');
       persist();
-      playWinnerReveal(result, { redraw: true }).catch(function (err) {
-        state.rolling = false;
-        state.pendingIndex = null;
-        updateAll();
-        showToast('重抽出错：' + err.message, 'error');
-      });
+      launchFrames();
     });
   }
 
@@ -862,22 +772,22 @@
   }
 
   function resetRound() {
-    if (state.rolling || state.assigning) return;
+    if (state.busy) return;
     var hadWinner = Boolean(state.round && state.round.winners.length);
     var run = function () {
       stopConfetti();
+      board.stop();
       state.round = null;
-      state.rolling = false;
+      state.busy = false;
       state.assigning = false;
-      state.pendingIndex = null;
       state.startedAt = null;
       state.recordId = null;
       el.live.textContent = '';
       setInputLocked(false);
-      renderIdleStage();
+      syncBoardIdle();
       updateAll();
       persist();
-      setStatus('已重置 · 改好编号和奖品后点「抽取第 1 位」');
+      setStatus('已重置 · 改好编号和奖品后点「开始弹射」');
     };
 
     if (!hadWinner) {
@@ -1008,13 +918,16 @@
     el.fullscreen.textContent = active ? '⤢' : '⛶';
     el.fullscreen.title = active ? '退出全屏' : '全屏（投屏用）';
     el.fullscreen.setAttribute('aria-label', active ? '退出全屏' : '全屏（投屏用）');
-    window.requestAnimationFrame(fitConfetti);
+    window.requestAnimationFrame(function () {
+      board.resize();
+      fitConfetti();
+    });
   });
 
   /* ---------------- 事件 ---------------- */
 
   el.draw.addEventListener('click', startPrimary);
-  el.redraw.addEventListener('click', startRedraw);
+  el.redraw.addEventListener('click', relaunch);
   el.reset.addEventListener('click', resetRound);
   el.exportBtn.addEventListener('click', openExport);
   el.download.addEventListener('click', downloadExport);
@@ -1027,6 +940,7 @@
 
   el.names.addEventListener('input', function () {
     if (state.round) return;
+    syncBoardIdle();
     updateAll();
     schedulePersist();
   });
@@ -1042,6 +956,7 @@
   el.sample.addEventListener('click', function () {
     if (state.round) return;
     el.names.value = SAMPLE_IDS.join('\n');
+    syncBoardIdle();
     updateAll();
     persist();
     setStatus('已填入示例编号 · 改成你的参与者编号即可');
@@ -1053,6 +968,7 @@
       confirmDialog('清空编号', '确定清空当前参与者编号吗？', '清空').then(function (ok) {
         if (!ok) return;
         el.names.value = '';
+        syncBoardIdle();
         updateAll();
         persist();
         el.names.focus();
@@ -1061,6 +977,7 @@
       return;
     }
     el.names.value = '';
+    syncBoardIdle();
     updateAll();
     persist();
     el.names.focus();
@@ -1076,6 +993,7 @@
     var reader = new FileReader();
     reader.onload = function () {
       el.names.value = String(reader.result || '');
+      syncBoardIdle();
       updateAll();
       persist();
       setStatus('已导入 ' + file.name);
@@ -1120,12 +1038,23 @@
   });
 
   var resizeTimer = 0;
+  function resizeAll() {
+    board.resize();
+    fitConfetti();
+  }
+
   window.addEventListener('resize', function () {
     window.clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(function () {
-      if (confettiParticles.length) fitConfetti();
-    }, 200);
+    resizeTimer = window.setTimeout(resizeAll, 150);
   });
+
+  if (window.ResizeObserver) {
+    var observer = new ResizeObserver(function () {
+      board.resize();
+      fitConfetti();
+    });
+    observer.observe(el.stage);
+  }
 
   /* ---------------- 初始化 ---------------- */
 
@@ -1147,6 +1076,8 @@
     }
     el.names.value = idsText || SAMPLE_IDS.join('\n');
 
+    board.setIds(parsedInput().ids);
+
     var restored = false;
     if (saved.round && Array.isArray(saved.round.winners) && saved.round.winners.length) {
       try {
@@ -1158,6 +1089,17 @@
         el.names.value = round.ids.join('\n');
         fillPrizeInputs(round.prizes);
         setInputLocked(true);
+        var tileOrder = round.ids;
+        if (saved.board && Array.isArray(saved.board.tileOrder) &&
+            sameIdSet(saved.board.tileOrder, round.ids)) {
+          tileOrder = saved.board.tileOrder;
+        }
+        board.setIds(tileOrder);
+        if (saved.board && Array.isArray(saved.board.frames) && saved.board.frames.length === 3) {
+          board.setFrames(saved.board.frames);
+        }
+        board.setSelected(round.winners);
+        board.setPrizeLabels(['', '', '']);
         restored = true;
       } catch (err) {
         state.round = null;
@@ -1166,27 +1108,33 @@
       }
     }
 
+    if (!restored) {
+      board.setIds(parsedInput().ids);
+      board.setSelected([]);
+      board.setPrizeLabels(['', '', '']);
+    }
+
     updateAll();
     if (restored) {
-      renderRestoredStage();
       if (state.round.assigned) {
         setStatus('已恢复：奖品分配结果');
       } else if (state.round.allDrawn) {
-        setStatus('已恢复：三位中奖者已就位 · 下一步分配奖品');
+        setStatus('已恢复：三位中奖者已选出 · 下一步分配奖品');
       } else {
-        setStatus('已恢复上次抽奖进度 · 继续抽第 ' +
-          (state.round.drawnCount + 1) + ' 位');
+        setStatus('已恢复上次进度 · 可以重新弹射');
       }
     } else {
-      renderIdleStage();
-      setStatus('就绪 · 按空格或点「抽取第 1 位」');
+      setStatus('就绪 · 点「开始弹射」或按空格');
     }
 
     renderHistory();
     if (restored && state.round.assigned) {
       saveRecord();
     }
-    window.requestAnimationFrame(fitConfetti);
+    window.requestAnimationFrame(function () {
+      board.resize();
+      fitConfetti();
+    });
   }
 
   init();

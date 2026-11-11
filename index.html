@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>三人抽奖器 · 两步抽奖 · 数字编号</title>
-  <meta name="description" content="两步抽奖工具：第一步抽出 3 位数字编号中奖者，第二步把 3 个平级但不同的奖品随机分配给这 3 位，每人最多中一个，全部在浏览器本地运行。">
+  <title>三人抽奖器 · 选框弹射选人 · 数字编号</title>
+  <meta name="description" content="把 11 位左右的数字编号平铺在板上，三个选框随机弹射、互相碰撞，停下后各选覆盖面积最大的编号；再把 3 个不同奖品随机分配，每人最多中一个。">
   <meta name="theme-color" content="#0b0d14">
   <meta property="og:type" content="website">
   <meta property="og:title" content="三人抽奖器">
-  <meta property="og:description" content="先抽 3 位数字编号中奖者，再随机分配 3 个不同奖品 · 每人最多中一个。深色舞台两步抽奖页。">
+  <meta property="og:description" content="数字编号铺满板子，三个选框随机弹射碰撞，停下后各选覆盖面积最大的编号。每人最多中一个。">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/styles.css">
 </head>
@@ -19,7 +19,7 @@
         <span class="brand-mark" aria-hidden="true">抽</span>
         <div class="brand-text">
           <h1>三人抽奖器</h1>
-          <p>先抽 3 位中奖者 · 再随机分配 3 个平级奖品 · 每人最多中一个</p>
+          <p>数字编号铺满板子 · 三个框随机弹射 · 各选覆盖面积最大的编号</p>
         </div>
       </div>
       <div class="header-meta">
@@ -35,8 +35,8 @@
             <h2>参与者编号</h2>
             <span class="badge" id="count-badge">0 个</span>
           </div>
-          <p class="hint">只能填写数字编号，一行一个，也支持逗号分隔，自动去重。</p>
-          <textarea id="names-input" spellcheck="false" autocomplete="off" inputmode="numeric" placeholder="001&#10;002&#10;003..." aria-label="参与者数字编号"></textarea>
+          <p class="hint">只能填数字编号（约 11 位），一行一个，也支持逗号分隔，自动去重。每次弹射前会重新随机排列位置。</p>
+          <textarea id="names-input" spellcheck="false" autocomplete="off" inputmode="numeric" placeholder="20260000001&#10;20260000002&#10;20260000003..." aria-label="参与者数字编号"></textarea>
           <p class="input-error" id="id-error" hidden></p>
           <div class="setup-actions">
             <button class="btn btn-ghost" id="btn-sample" type="button">示例</button>
@@ -81,32 +81,28 @@
 
       <section class="panel draw-panel" id="draw-panel" aria-label="抽奖舞台">
         <div class="stage-top">
-          <span class="next" id="next-text">第一步 · 抽 3 位中奖者</span>
+          <span class="next" id="next-text">第一步 · 弹射选框选人</span>
           <span class="remain" id="remain-text">待抽奖 0 个编号</span>
         </div>
 
         <div class="steps" id="steps" aria-label="抽奖步骤">
-          <span class="step is-active" id="step-1"><span class="step-num">1</span>抽 3 位中奖者</span>
+          <span class="step is-active" id="step-1"><span class="step-num">1</span>弹射选框选人</span>
           <span class="step-arrow" aria-hidden="true">→</span>
           <span class="step" id="step-2"><span class="step-num">2</span>随机分配奖品</span>
         </div>
 
         <div class="stage" id="stage">
-          <div class="ring" aria-hidden="true"></div>
+          <canvas id="board" aria-label="数字编号板，三个选框在板上弹射"></canvas>
           <canvas id="confetti" aria-hidden="true"></canvas>
-          <p class="stage-prize" id="stage-prize">两步抽奖</p>
-          <div class="stage-name" id="stage-name">准备好了吗？</div>
-          <div class="assign-list" id="assign-list" hidden></div>
-          <p class="stage-hint" id="stage-hint">先抽 3 位中奖者 · 按空格开始</p>
         </div>
 
         <div class="controls">
           <button class="btn btn-primary" id="btn-draw" type="button">
-            <span id="draw-label">抽取第 1 位</span>
+            <span id="draw-label">开始弹射</span>
             <kbd id="draw-kbd">空格</kbd>
           </button>
           <div class="controls-side">
-            <button class="btn btn-secondary" id="btn-redraw" type="button" disabled>最后一位不到场 · 重抽</button>
+            <button class="btn btn-secondary" id="btn-redraw" type="button" disabled>重新弹射</button>
             <button class="btn btn-secondary" id="btn-reset" type="button">重置</button>
             <button class="btn btn-secondary" id="btn-export" type="button" disabled>导出记录</button>
             <button class="btn btn-secondary btn-icon" id="btn-fullscreen" type="button" title="全屏（投屏用）" aria-label="全屏（投屏用）">⛶</button>
@@ -131,8 +127,8 @@
         <p class="excluded-note" id="excluded-note" hidden></p>
 
         <div class="statusbar">
-          <span id="status-text" role="status">就绪 · 按空格或点「抽取第 1 位」</span>
-          <span class="status-tip">先抽人 · 再分奖品 · 每人最多中一个</span>
+          <span id="status-text" role="status">就绪 · 点「开始弹射」或按空格</span>
+          <span class="status-tip">每个框选一个编号 · 每人最多中一个</span>
         </div>
       </section>
     </main>
@@ -169,6 +165,7 @@
   </dialog>
 
   <script src="assets/core.js"></script>
+  <script src="assets/board.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>

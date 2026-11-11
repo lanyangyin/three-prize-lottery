@@ -10,6 +10,7 @@ const {
   DrawError,
   Round,
   parseIds,
+  selectWinners,
   reportText,
   formatStamp
 } = require('../assets/core.js');
@@ -161,6 +162,60 @@ test('奖品分配对每位中奖者是均匀随机的', function () {
   });
 });
 
+test('选框停下后各选覆盖面积最大的编号', function () {
+  const tiles = [
+    { id: '001', x: 0, y: 0, w: 100, h: 100 },
+    { id: '002', x: 100, y: 0, w: 100, h: 100 },
+    { id: '003', x: 200, y: 0, w: 100, h: 100 },
+    { id: '004', x: 300, y: 0, w: 100, h: 100 }
+  ];
+  const frames = [
+    { x: 0, y: 0, w: 100, h: 100 },
+    { x: 110, y: 0, w: 100, h: 100 },
+    { x: 300, y: 0, w: 100, h: 100 }
+  ];
+  const picks = selectWinners(frames, tiles, function () { return 0; });
+  assert.deepEqual(picks.map(function (p) { return p.id; }), ['001', '002', '004']);
+  assert.equal(new Set(picks.map(function (p) { return p.id; })).size, 3);
+});
+
+test('两个框同时盖住同一张编号时，结果仍然不重复', function () {
+  const tiles = [
+    { id: '001', x: 0, y: 0, w: 100, h: 100 },
+    { id: '002', x: 100, y: 0, w: 100, h: 100 },
+    { id: '003', x: 200, y: 0, w: 100, h: 100 },
+    { id: '004', x: 300, y: 0, w: 100, h: 100 }
+  ];
+  const frames = [
+    { x: 0, y: 0, w: 100, h: 100 },
+    { x: 0, y: 0, w: 100, h: 100 },
+    { x: 300, y: 0, w: 100, h: 100 }
+  ];
+  const picks = selectWinners(frames, tiles, function () { return 0; });
+  const ids = picks.map(function (p) { return p.id; });
+  assert.equal(new Set(ids).size, 3);
+  assert.equal(ids[2], '004');
+  assert.ok(picks.some(function (p) { return p.area === 10000; }));
+});
+
+test('setWinners 接受三个不同的数字编号并可直接分配奖品', function () {
+  const round = new Round(['001', '002', '003', '004', '005'], PRIZES);
+  round.setWinners(['003', '001', '004']);
+  assert.deepEqual(round.winners, ['003', '001', '004']);
+  assert.equal(round.allDrawn, true);
+  assert.equal(round.remaining, 2);
+  round.assignPrizes();
+  assert.deepEqual(round.assignments.map(function (a) { return a.id; }), ['003', '001', '004']);
+  assert.deepEqual(round.assignments.map(function (a) { return a.prize; }).sort(), PRIZES.slice().sort());
+});
+
+test('setWinners 拒绝重复、非数字和不在名单里的编号', function () {
+  const round = new Round(['001', '002', '003', '004'], PRIZES);
+  assert.throws(function () { round.setWinners(['001', '001', '003']); }, DrawError);
+  assert.throws(function () { round.setWinners(['001', 'abc', '003']); }, DrawError);
+  assert.throws(function () { round.setWinners(['001', '002', '999']); }, DrawError);
+});
+
 test('重抽只能替换最后一位，且作废后不再参与', function () {
   const round = seededRound(SAMPLE_IDS, 42);
   round.draw();
@@ -244,8 +299,8 @@ test('中奖记录包含两步流程、中奖编号和奖品分配', function ()
   assert.match(text, /抽奖时间：2026-11-12 09:30:00/);
   assert.match(text, /参与人数：10/);
   assert.match(text, /每人中奖概率：30\.0%/);
-  assert.match(text, /抽奖方式：先抽 3 位中奖者，再随机分配奖品/);
-  assert.match(text, /中奖编号（按抽出顺序）：/);
+  assert.match(text, /抽奖方式：三个选框随机弹射，各选覆盖面积最大的编号；再随机分配奖品/);
+  assert.match(text, /中奖编号（按框序号）：/);
   assert.match(text, /奖品分配：/);
   round.results().forEach(function (item) {
     assert.match(text, new RegExp(item.prize + '：' + item.id));

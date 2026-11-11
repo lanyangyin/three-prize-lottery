@@ -674,13 +674,20 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: clamp(300px, 40vh, 440px);
+  height: clamp(330px, 46vh, 490px);
   overflow: hidden;
   border: 1px solid #1d2334;
   border-radius: 18px;
-  background:
-    radial-gradient(circle at 50% 46%, rgba(255, 204, 85, 0.075), transparent 56%),
-    radial-gradient(circle at 50% 50%, #10141e, #090b11 72%);
+  background: #080a10;
+}
+
+#board {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .ring {
@@ -707,7 +714,7 @@ a {
 #confetti {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -1188,7 +1195,7 @@ a {
   }
 
   .stage {
-    height: clamp(280px, 40vh, 400px);
+    height: clamp(300px, 44vh, 430px);
   }
 
   .stage-name {
