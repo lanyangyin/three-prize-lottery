@@ -68,6 +68,30 @@
           <p class="prize-error" id="prize-error" hidden></p>
         </section>
 
+        <section class="setup-block settings-block">
+          <div class="block-head">
+            <h2>选框与格子</h2>
+          </div>
+          <div class="setting-line">
+            <label for="frame-size">选框大小</label>
+            <span class="setting-value" id="frame-size-value">300 × 180</span>
+          </div>
+          <input type="range" id="frame-size" min="180" max="420" step="10" value="300" aria-label="选框大小">
+          <div class="setting-line">
+            <label for="gap-size">格子间距</label>
+            <span class="setting-value" id="gap-value">6px</span>
+          </div>
+          <input type="range" id="gap-size" min="0" max="24" step="1" value="6" aria-label="格子间距">
+          <div class="setting-line empty-line">
+            <span>空位处理</span>
+            <div class="segmented">
+              <label><input type="radio" name="empty-mode" value="retry" checked><span>重新弹射</span></label>
+              <label><input type="radio" name="empty-mode" value="nearest"><span>选最近编号</span></label>
+            </div>
+          </div>
+          <p class="hint">空位指框停下时完全没有盖住任何编号。未开始时调整立即生效，开始后锁定。</p>
+        </section>
+
         <section class="setup-block history-block">
           <div class="block-head">
             <h2>历史记录</h2>

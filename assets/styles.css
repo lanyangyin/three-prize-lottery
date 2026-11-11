@@ -365,6 +365,81 @@ a {
   line-height: 1.5;
 }
 
+.settings-block {
+  flex: 0 0 auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  gap: 8px;
+}
+
+.setting-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--sub);
+  font-size: 11.5px;
+}
+
+.setting-value {
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+#frame-size,
+#gap-size {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+#frame-size:disabled,
+#gap-size:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.segmented {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #121722;
+}
+
+.segmented label {
+  position: relative;
+  display: inline-flex;
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented span {
+  display: inline-block;
+  padding: 4px 9px;
+  color: var(--sub);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.segmented input:checked + span {
+  background: rgba(255, 204, 85, 0.14);
+  color: var(--gold);
+}
+
+.segmented input:disabled + span {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .history-block {
   padding-top: 16px;
   border-top: 1px solid var(--line);

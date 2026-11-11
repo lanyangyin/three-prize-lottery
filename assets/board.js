@@ -9,10 +9,14 @@
 
   var BOARD_W = 1000;
   var BOARD_H = 560;
-  var FRAME_W = 190;
-  var FRAME_H = 112;
+  var DEFAULT_FRAME_W = 300;
+  var DEFAULT_FRAME_H = 180;
+  var MIN_FRAME_W = 180;
+  var MAX_FRAME_W = 420;
+  var DEFAULT_GAP = 6;
+  var MIN_GAP = 0;
+  var MAX_GAP = 24;
   var MARGIN = 14;
-  var GAP = 6;
   var STOP_SPEED = 12;
   var WALL_REST = 0.9;
   var HIT_REST = 0.94;
@@ -53,21 +57,22 @@
     return 8;
   }
 
-  function layoutTiles(ids) {
+  function layoutTiles(ids, gap) {
     var n = ids.length;
     if (!n) return [];
+    var cellGap = (typeof gap === 'number' && isFinite(gap)) ? gap : DEFAULT_GAP;
     var cols = columnsFor(n);
     var rows = Math.ceil(n / cols);
-    var cellW = (BOARD_W - MARGIN * 2 - (cols - 1) * GAP) / cols;
-    var cellH = (BOARD_H - MARGIN * 2 - (rows - 1) * GAP) / rows;
+    var cellW = (BOARD_W - MARGIN * 2 - (cols - 1) * cellGap) / cols;
+    var cellH = (BOARD_H - MARGIN * 2 - (rows - 1) * cellGap) / rows;
     var tiles = [];
     for (var i = 0; i < n; i += 1) {
       var row = Math.floor(i / cols);
       var col = i % cols;
       tiles.push({
         id: ids[i],
-        x: MARGIN + col * (cellW + GAP),
-        y: MARGIN + row * (cellH + GAP),
+        x: MARGIN + col * (cellW + cellGap),
+        y: MARGIN + row * (cellH + cellGap),
         w: cellW,
         h: cellH
       });
@@ -81,14 +86,21 @@
       a.y < b.y + b.h + p && a.y + a.h + p > b.y;
   }
 
-  function Board(canvas) {
+  function Board(canvas, options) {
+    var opts = options || {};
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.frameW = clamp(Number(opts.frameWidth) || DEFAULT_FRAME_W, MIN_FRAME_W, MAX_FRAME_W);
+    this.frameH = Math.round(this.frameW * 0.6);
+    this.gap = (typeof opts.gap === 'number' && isFinite(opts.gap))
+      ? clamp(opts.gap, MIN_GAP, MAX_GAP)
+      : DEFAULT_GAP;
     this.ids = [];
     this.tiles = [];
     this.frames = [];
     this.highlightIds = [];
     this.prizeLabels = ['', '', ''];
+    this.emptyFrames = [];
     this.maxId = '';
     this.idFontSize = 14;
     this.mode = 'idle';
@@ -126,9 +138,10 @@
   Board.prototype.setIds = function (ids) {
     this.stop();
     this.ids = (ids || []).slice();
-    this.tiles = layoutTiles(this.ids);
+    this.tiles = layoutTiles(this.ids, this.gap);
     this.highlightIds = [];
     this.prizeLabels = ['', '', ''];
+    this.emptyFrames = [];
     this.mode = 'idle';
     this.measureIdFont();
     this.placeIdleFrames();
@@ -136,23 +149,42 @@
   };
 
   Board.prototype.placeIdleFrames = function () {
+    var w = this.frameW;
+    var h = this.frameH;
     var spots = [
-      { x: 62, y: 82 },
-      { x: 405, y: 224 },
-      { x: 748, y: 366 }
+      { x: MARGIN, y: MARGIN },
+      { x: BOARD_W - w - MARGIN, y: MARGIN },
+      { x: (BOARD_W - w) / 2, y: BOARD_H - h - MARGIN }
     ];
     this.frames = spots.map(function (spot) {
       return {
         x: spot.x,
         y: spot.y,
-        w: FRAME_W,
-        h: FRAME_H,
+        w: w,
+        h: h,
         vx: 0,
         vy: 0,
         k: 0,
         stopped: true
       };
     });
+  };
+
+  Board.prototype.configure = function (frameWidth, gap) {
+    this.stop();
+    var width = Number(frameWidth);
+    var cellGap = Number(gap);
+    this.frameW = clamp(isFinite(width) ? width : DEFAULT_FRAME_W, MIN_FRAME_W, MAX_FRAME_W);
+    this.frameH = Math.round(this.frameW * 0.6);
+    this.gap = clamp(isFinite(cellGap) ? cellGap : DEFAULT_GAP, MIN_GAP, MAX_GAP);
+    this.tiles = layoutTiles(this.ids, this.gap);
+    this.highlightIds = [];
+    this.prizeLabels = ['', '', ''];
+    this.emptyFrames = [];
+    this.mode = 'idle';
+    this.measureIdFont();
+    this.placeIdleFrames();
+    this.draw();
   };
 
   Board.prototype.measureIdFont = function () {
@@ -178,45 +210,9 @@
     this.idFontSize = size;
   };
 
-  Board.prototype.placeLaunchFrames = function () {
-    var frames = [];
-    var fallback = [
-      { x: 70, y: 90 },
-      { x: 405, y: 224 },
-      { x: 740, y: 358 }
-    ];
-
-    for (var i = 0; i < 3; i += 1) {
-      var placed = false;
-      var x = fallback[i].x;
-      var y = fallback[i].y;
-      for (var attempt = 0; attempt < 400; attempt += 1) {
-        x = rand(10, BOARD_W - FRAME_W - 10);
-        y = rand(10, BOARD_H - FRAME_H - 10);
-        var candidate = { x: x - 10, y: y - 10, w: FRAME_W + 20, h: FRAME_H + 20 };
-        var clash = frames.some(function (frame) {
-          return rectsOverlap(candidate, frame, 0);
-        });
-        if (!clash) {
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        x = fallback[i].x;
-        y = fallback[i].y;
-      }
-      frames.push({
-        x: x,
-        y: y,
-        w: FRAME_W,
-        h: FRAME_H,
-        vx: 0,
-        vy: 0,
-        k: 0,
-        stopped: false
-      });
-    }
+  // 从框当前所在位置直接给初速度，不再瞬移到随机起点
+  Board.prototype.armFrames = function () {
+    if (this.frames.length !== 3) this.placeIdleFrames();
 
     var frictions = [0.70, 0.92, 1.14];
     for (var s = frictions.length - 1; s > 0; s -= 1) {
@@ -226,28 +222,33 @@
       frictions[j] = tmp;
     }
 
-    frames.forEach(function (frame, index) {
+    var self = this;
+    this.frames.forEach(function (frame, index) {
+      frame.w = self.frameW;
+      frame.h = self.frameH;
+      frame.x = clamp(frame.x, 0, BOARD_W - frame.w);
+      frame.y = clamp(frame.y, 0, BOARD_H - frame.h);
       var targetX = BOARD_W / 2 + rand(-190, 190);
       var targetY = BOARD_H / 2 + rand(-120, 120);
-      var angle = Math.atan2(targetY - (frame.y + FRAME_H / 2),
-        targetX - (frame.x + FRAME_W / 2)) + rand(-0.4, 0.4);
+      var angle = Math.atan2(targetY - (frame.y + frame.h / 2),
+        targetX - (frame.x + frame.w / 2)) + rand(-0.4, 0.4);
       var speed = rand(640, 840);
       frame.vx = Math.cos(angle) * speed;
       frame.vy = Math.sin(angle) * speed;
       frame.k = frictions[index] + rand(-0.04, 0.04);
+      frame.stopped = false;
     });
-
-    this.frames = frames;
   };
 
   Board.prototype.launch = function (ids) {
     this.stop();
     this.ids = (ids || []).slice();
-    this.tiles = layoutTiles(this.ids);
+    this.tiles = layoutTiles(this.ids, this.gap);
     this.highlightIds = [];
     this.prizeLabels = ['', '', ''];
+    this.emptyFrames = [];
     this.measureIdFont();
-    this.placeLaunchFrames();
+    this.armFrames();
     this.mode = 'running';
     this.startedAt = performance.now();
     this.last = this.startedAt;
@@ -422,24 +423,32 @@
   Board.prototype.setFrames = function (frames) {
     if (!Array.isArray(frames) || frames.length !== 3) return;
     this.stop();
+    var w = this.frameW;
+    var h = this.frameH;
     this.frames = frames.map(function (frame) {
       return {
-        x: clamp(Number(frame.x) || 0, 0, BOARD_W - FRAME_W),
-        y: clamp(Number(frame.y) || 0, 0, BOARD_H - FRAME_H),
-        w: FRAME_W,
-        h: FRAME_H,
+        x: clamp(Number(frame.x) || 0, 0, BOARD_W - w),
+        y: clamp(Number(frame.y) || 0, 0, BOARD_H - h),
+        w: w,
+        h: h,
         vx: 0,
         vy: 0,
         k: 0,
         stopped: true
       };
     });
+    this.emptyFrames = [];
     this.mode = 'stopped';
     this.draw();
   };
 
   Board.prototype.setSelected = function (ids) {
     this.highlightIds = (ids || []).slice();
+    this.draw();
+  };
+
+  Board.prototype.setEmptyFrames = function (indexes) {
+    this.emptyFrames = (indexes || []).slice();
     this.draw();
   };
 
@@ -550,42 +559,58 @@
       var bob = self.mode === 'idle' ? Math.sin(now / 750 + index * 2.1) * 3 : 0;
       var x = frame.x;
       var y = frame.y + bob;
+      var isEmpty = self.emptyFrames.indexOf(index) !== -1;
+      var accent = isEmpty ? '#ff6b7f' : '#a9c6ff';
 
       ctx.save();
-      ctx.shadowColor = 'rgba(110, 168, 254, 0.22)';
+      ctx.shadowColor = isEmpty ? 'rgba(255, 107, 127, 0.28)' : 'rgba(110, 168, 254, 0.22)';
       ctx.shadowBlur = 22;
       roundedRect(ctx, x, y, frame.w, frame.h, 12);
-      ctx.fillStyle = 'rgba(110, 168, 254, 0.055)';
+      ctx.fillStyle = isEmpty ? 'rgba(255, 107, 127, 0.07)' : 'rgba(110, 168, 254, 0.055)';
       ctx.fill();
       ctx.restore();
 
       roundedRect(ctx, x, y, frame.w, frame.h, 12);
-      ctx.strokeStyle = '#a9c6ff';
+      ctx.strokeStyle = accent;
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
       roundedRect(ctx, x + 5, y + 5, frame.w - 10, frame.h - 10, 9);
       ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(169, 198, 255, 0.3)';
+      ctx.strokeStyle = isEmpty ? 'rgba(255, 107, 127, 0.32)' : 'rgba(169, 198, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.setLineDash([]);
 
-      var label = '框 ' + (index + 1);
-      ctx.font = '700 12px ' + FONT_STACK;
-      var labelWidth = ctx.measureText(label).width + 16;
-      roundedRect(ctx, x + 9, y + 9, labelWidth, 24, 12);
-      ctx.fillStyle = 'rgba(8, 10, 16, 0.85)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(169, 198, 255, 0.38)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = '#cfe0ff';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, x + 17, y + 21.5);
+      if (isEmpty) {
+        var label = '框 ' + (index + 1) + ' · 空位';
+        ctx.font = '700 12px ' + FONT_STACK;
+        var labelWidth = ctx.measureText(label).width + 16;
+        roundedRect(ctx, x + 9, y + 9, labelWidth, 24, 12);
+        ctx.fillStyle = 'rgba(8, 10, 16, 0.88)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 107, 127, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = accent;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x + 17, y + 21.5);
+      } else {
+        roundedRect(ctx, x + 10, y + 10, 22, 22, 7);
+        ctx.fillStyle = 'rgba(8, 10, 16, 0.88)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(169, 198, 255, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = accent;
+        ctx.font = '700 12px ' + FONT_STACK;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(index + 1), x + 21, y + 21.5);
+      }
 
-      var prize = self.prizeLabels[index];
+      var prize = isEmpty ? '' : self.prizeLabels[index];
       if (prize) {
         var fontSize = 13;
         ctx.font = '600 ' + fontSize + 'px ' + FONT_STACK;
@@ -617,7 +642,14 @@
     layoutTiles: layoutTiles,
     BOARD_W: BOARD_W,
     BOARD_H: BOARD_H,
-    FRAME_W: FRAME_W,
-    FRAME_H: FRAME_H
+    DEFAULT_FRAME_W: DEFAULT_FRAME_W,
+    DEFAULT_FRAME_H: DEFAULT_FRAME_H,
+    FRAME_W: DEFAULT_FRAME_W,
+    FRAME_H: DEFAULT_FRAME_H,
+    MIN_FRAME_W: MIN_FRAME_W,
+    MAX_FRAME_W: MAX_FRAME_W,
+    DEFAULT_GAP: DEFAULT_GAP,
+    MIN_GAP: MIN_GAP,
+    MAX_GAP: MAX_GAP
   };
 })(typeof window !== 'undefined' ? window : globalThis);

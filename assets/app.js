@@ -29,6 +29,7 @@
     '20260000005', '20260000006', '20260000007', '20260000008',
     '20260000009', '20260000010', '20260000011', '20260000012'
   ];
+  var DEFAULT_SETTINGS = { frameWidth: 300, gap: 6, emptyMode: 'retry' };
   var REDUCED = window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)')
     : null;
@@ -37,6 +38,8 @@
     round: null,
     busy: false,
     assigning: false,
+    needReframe: false,
+    emptyFrameIndexes: [],
     history: [],
     startedAt: null,
     recordId: null
@@ -57,6 +60,11 @@
     file: $('file-input'),
     prizeInputs: Array.prototype.slice.call(document.querySelectorAll('.prize-input')),
     prizeError: $('prize-error'),
+    frameSize: $('frame-size'),
+    frameSizeValue: $('frame-size-value'),
+    gapSize: $('gap-size'),
+    gapValue: $('gap-value'),
+    emptyRadios: Array.prototype.slice.call(document.querySelectorAll('input[name="empty-mode"]')),
     history: $('history-list'),
     clearHistory: $('btn-clear-history'),
     next: $('next-text'),
@@ -142,6 +150,64 @@
     el.prizeInputs.forEach(function (input, index) {
       input.value = prizes[index] || DEFAULT_PRIZES[index] || '';
     });
+  }
+
+  function normalizeSettings(raw) {
+    var source = raw || {};
+    var width = Number(source.frameWidth);
+    var gap = Number(source.gap);
+    return {
+      frameWidth: isFinite(width) ? clampSetting(width, 180, 420) : DEFAULT_SETTINGS.frameWidth,
+      gap: isFinite(gap) ? clampSetting(gap, 0, 24) : DEFAULT_SETTINGS.gap,
+      emptyMode: source.emptyMode === 'nearest' ? 'nearest' : 'retry'
+    };
+  }
+
+  function clampSetting(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function readEmptyMode() {
+    for (var i = 0; i < el.emptyRadios.length; i += 1) {
+      if (el.emptyRadios[i].checked) return el.emptyRadios[i].value;
+    }
+    return DEFAULT_SETTINGS.emptyMode;
+  }
+
+  function currentSettings() {
+    var width = Number(el.frameSize.value);
+    var gap = Number(el.gapSize.value);
+    return {
+      frameWidth: isFinite(width) ? clampSetting(width, 180, 420) : DEFAULT_SETTINGS.frameWidth,
+      gap: isFinite(gap) ? clampSetting(gap, 0, 24) : DEFAULT_SETTINGS.gap,
+      emptyMode: readEmptyMode()
+    };
+  }
+
+  function updateSettingsLabels() {
+    var settings = currentSettings();
+    el.frameSizeValue.textContent = settings.frameWidth + ' × ' +
+      Math.round(settings.frameWidth * 0.6);
+    el.gapValue.textContent = settings.gap + 'px';
+  }
+
+  function setSettingsControls(settings) {
+    el.frameSize.value = String(settings.frameWidth);
+    el.gapSize.value = String(settings.gap);
+    el.emptyRadios.forEach(function (radio) {
+      radio.checked = radio.value === settings.emptyMode;
+    });
+    updateSettingsLabels();
+  }
+
+  function applyBoardSettings() {
+    var settings = currentSettings();
+    board.configure(settings.frameWidth, settings.gap);
+    updateSettingsLabels();
+  }
+
+  function tieRandom() {
+    return Core.randomIndex(1000000) / 1000000;
   }
 
   function updateIdError() {
@@ -254,15 +320,18 @@
       frames = board.getFrames().map(function (frame) {
         return {
           x: Math.round(frame.x * 10) / 10,
-          y: Math.round(frame.y * 10) / 10
+          y: Math.round(frame.y * 10) / 10,
+          w: Math.round(frame.w),
+          h: Math.round(frame.h)
         };
       });
       tileOrder = board.ids.slice();
     }
     var data = {
-      v: 6,
+      v: 7,
       idsText: round ? round.ids.join('\n') : el.names.value,
       prizes: round ? round.prizes.slice() : readPrizeInputs(),
+      settings: currentSettings(),
       round: round && round.winners.length ? round.snapshot() : null,
       board: frames ? { frames: frames, tileOrder: tileOrder } : null,
       startedAt: state.startedAt,
@@ -312,6 +381,14 @@
     if (!round) {
       el.next.textContent = '第一步 · 弹射选框选人';
       el.remain.textContent = '待抽奖 ' + parsedInput().ids.length + ' 个编号';
+      return;
+    }
+    if (state.needReframe) {
+      var frameNames = state.emptyFrameIndexes.map(function (index) {
+        return '框 ' + (index + 1);
+      }).join('、');
+      el.next.textContent = '空位未选中 · 请重新弹射';
+      el.remain.textContent = frameNames + ' 停在空位';
       return;
     }
     if (!round.allDrawn) {
@@ -396,7 +473,7 @@
       label = state.assigning ? '分配中…' : '弹射中…';
       disabled = true;
     } else if (!allDrawn) {
-      label = '开始弹射';
+      label = state.needReframe ? '重新弹射' : '开始弹射';
       disabled = false;
     } else if (!assigned) {
       label = '随机分配奖品';
@@ -410,7 +487,8 @@
     el.drawLabel.textContent = label;
     el.drawKbd.hidden = disabled;
 
-    el.redraw.disabled = busy || !round || !allDrawn || assigned;
+    el.redraw.disabled = busy || !round || assigned ||
+      (!allDrawn && !state.needReframe);
     el.reset.disabled = busy;
     el.exportBtn.disabled = busy || !assigned;
   }
@@ -433,6 +511,11 @@
     });
     el.prizeInputs.forEach(function (input) {
       input.disabled = locked;
+    });
+    el.frameSize.disabled = locked;
+    el.gapSize.disabled = locked;
+    el.emptyRadios.forEach(function (radio) {
+      radio.disabled = locked;
     });
   }
 
@@ -621,8 +704,11 @@
     if (state.busy || !state.round || state.round.assigned) return;
     state.busy = true;
     state.assigning = false;
+    state.needReframe = false;
+    state.emptyFrameIndexes = [];
     updateButtons();
     board.setSelected([]);
+    board.setEmptyFrames([]);
     board.setPrizeLabels(['', '', '']);
     setStatus('三个框正在弹射，等待它们停下……');
 
@@ -633,10 +719,41 @@
         updateAll();
         return;
       }
-      var picks;
+
+      var settings = currentSettings();
+      var selection;
       try {
-        picks = Core.selectWinners(result.frames, result.tiles);
-        state.round.setWinners(picks.map(function (pick) { return pick.id; }));
+        selection = Core.selectWinners(result.frames, result.tiles, {
+          emptyMode: settings.emptyMode,
+          randomFn: tieRandom
+        });
+      } catch (err) {
+        state.busy = false;
+        updateAll();
+        showToast('选框结果无效：' + err.message, 'error');
+        return;
+      }
+
+      if (settings.emptyMode === 'retry' && selection.emptyFrames.length) {
+        state.needReframe = true;
+        state.emptyFrameIndexes = selection.emptyFrames.slice();
+        state.busy = false;
+        board.setEmptyFrames(state.emptyFrameIndexes);
+        updateAll();
+        var names = state.emptyFrameIndexes.map(function (index) {
+          return '框 ' + (index + 1);
+        }).join('、');
+        setStatus(names + ' 停在空位，需要重新弹射');
+        showToast('有框停在空位，需要重新弹射', 'error');
+        return;
+      }
+
+      state.needReframe = false;
+      state.emptyFrameIndexes = [];
+      board.setEmptyFrames([]);
+
+      try {
+        state.round.setWinners(selection.picks.map(function (pick) { return pick.id; }));
       } catch (err) {
         state.busy = false;
         updateAll();
@@ -724,17 +841,25 @@
   }
 
   function relaunch() {
-    if (state.busy || !state.round || !state.round.allDrawn || state.round.assigned) return;
+    if (state.busy || !state.round || state.round.assigned) return;
+    if (state.needReframe) {
+      launchFrames();
+      return;
+    }
+    if (!state.round.allDrawn) return;
     confirmDialog(
       '重新弹射',
-      '重新弹射会清空本次选出的 3 位中奖者，三个框会重新随机弹射。确定吗？',
+      '重新弹射会清空本次选出的 3 位中奖者，三个框会从当前位置重新弹射。确定吗？',
       '重新弹射'
     ).then(function (ok) {
       if (!ok) return;
       state.round = new Round(state.round.ids, state.round.prizes);
       state.recordId = null;
       state.assigning = false;
+      state.needReframe = false;
+      state.emptyFrameIndexes = [];
       board.setSelected([]);
+      board.setEmptyFrames([]);
       board.setPrizeLabels(['', '', '']);
       updateAll();
       persist();
@@ -780,10 +905,13 @@
       state.round = null;
       state.busy = false;
       state.assigning = false;
+      state.needReframe = false;
+      state.emptyFrameIndexes = [];
       state.startedAt = null;
       state.recordId = null;
       el.live.textContent = '';
       setInputLocked(false);
+      board.setEmptyFrames([]);
       syncBoardIdle();
       updateAll();
       persist();
@@ -953,6 +1081,22 @@
     });
   });
 
+  function onSettingsInput() {
+    if (state.round) return;
+    applyBoardSettings();
+    schedulePersist();
+  }
+
+  el.frameSize.addEventListener('input', onSettingsInput);
+  el.gapSize.addEventListener('input', onSettingsInput);
+  el.emptyRadios.forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      if (state.round) return;
+      updateSettingsLabels();
+      schedulePersist();
+    });
+  });
+
   el.sample.addEventListener('click', function () {
     if (state.round) return;
     el.names.value = SAMPLE_IDS.join('\n');
@@ -1067,6 +1211,10 @@
       ? saved.prizes
       : DEFAULT_PRIZES;
     fillPrizeInputs(savedPrizes);
+
+    var savedSettings = normalizeSettings(saved.settings);
+    setSettingsControls(savedSettings);
+    board.configure(savedSettings.frameWidth, savedSettings.gap);
 
     var idsText = '';
     if (typeof saved.idsText === 'string' && saved.idsText.trim()) {

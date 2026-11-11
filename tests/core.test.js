@@ -174,9 +174,10 @@ test('选框停下后各选覆盖面积最大的编号', function () {
     { x: 110, y: 0, w: 100, h: 100 },
     { x: 300, y: 0, w: 100, h: 100 }
   ];
-  const picks = selectWinners(frames, tiles, function () { return 0; });
-  assert.deepEqual(picks.map(function (p) { return p.id; }), ['001', '002', '004']);
-  assert.equal(new Set(picks.map(function (p) { return p.id; })).size, 3);
+  const result = selectWinners(frames, tiles, { randomFn: function () { return 0; } });
+  assert.deepEqual(result.picks.map(function (p) { return p.id; }), ['001', '002', '004']);
+  assert.deepEqual(result.emptyFrames, []);
+  assert.equal(new Set(result.picks.map(function (p) { return p.id; })).size, 3);
 });
 
 test('两个框同时盖住同一张编号时，结果仍然不重复', function () {
@@ -191,11 +192,41 @@ test('两个框同时盖住同一张编号时，结果仍然不重复', function
     { x: 0, y: 0, w: 100, h: 100 },
     { x: 300, y: 0, w: 100, h: 100 }
   ];
-  const picks = selectWinners(frames, tiles, function () { return 0; });
-  const ids = picks.map(function (p) { return p.id; });
+  const result = selectWinners(frames, tiles, { randomFn: function () { return 0; } });
+  const ids = result.picks.map(function (p) { return p.id; });
   assert.equal(new Set(ids).size, 3);
   assert.equal(ids[2], '004');
-  assert.ok(picks.some(function (p) { return p.area === 10000; }));
+  assert.ok(result.picks.some(function (p) { return p.area === 10000; }));
+});
+
+test('框停在空位：重抽模式返回空结果，最近的模式补一个最近编号', function () {
+  const tiles = [
+    { id: '001', x: 0, y: 0, w: 100, h: 100 },
+    { id: '002', x: 100, y: 0, w: 100, h: 100 },
+    { id: '003', x: 200, y: 0, w: 100, h: 100 }
+  ];
+  const frames = [
+    { x: 0, y: 0, w: 100, h: 100 },
+    { x: 100, y: 0, w: 100, h: 100 },
+    { x: 500, y: 0, w: 100, h: 100 }
+  ];
+
+  const retry = selectWinners(frames, tiles, {
+    emptyMode: 'retry',
+    randomFn: function () { return 0; }
+  });
+  assert.deepEqual(retry.picks, []);
+  assert.deepEqual(retry.emptyFrames, [2]);
+
+  const nearest = selectWinners(frames, tiles, {
+    emptyMode: 'nearest',
+    randomFn: function () { return 0; }
+  });
+  assert.equal(nearest.picks.length, 3);
+  assert.deepEqual(nearest.emptyFrames, [2]);
+  assert.equal(nearest.picks[2].id, '003');
+  assert.equal(nearest.picks[2].area, 0);
+  assert.equal(new Set(nearest.picks.map(function (p) { return p.id; })).size, 3);
 });
 
 test('setWinners 接受三个不同的数字编号并可直接分配奖品', function () {

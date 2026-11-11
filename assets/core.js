@@ -127,25 +127,69 @@
     return w * h;
   }
 
+  function centerDistance(a, b) {
+    var ax = a.x + a.w / 2;
+    var ay = a.y + a.h / 2;
+    var bx = b.x + b.w / 2;
+    var by = b.y + b.h / 2;
+    return Math.hypot(ax - bx, ay - by);
+  }
+
   /**
    * 三个框停下后，各选一个覆盖面积最大的编号。
+   *
    * 为了保证"每人最多中一个"，三个框必须落到不同编号上：
-   * 在所有"框→不同编号"的分配中取总覆盖面积最大的一组；
-   * 面积并列时用 randomFn 随机挑一组。
+   * 在所有"框→不同编号"的分配中取总覆盖面积最大的一组。
+   *
+   * options:
+   *   emptyMode: 'retry'（有框完全没盖住编号时返回空结果，让页面重弹）
+   *              'nearest'（给空框补一个最近的编号）
+   *   randomFn: 面积并列时用于随机挑一组
+   *
+   * 返回 { picks, emptyFrames, mode }。
    */
-  function selectWinners(frames, tiles, randomFn) {
+  function selectWinners(frames, tiles, options) {
     if (!Array.isArray(frames) || frames.length !== WINNER_COUNT) {
       throw new DrawError('需要 ' + WINNER_COUNT + ' 个选框');
     }
     if (!Array.isArray(tiles) || tiles.length < WINNER_COUNT) {
       throw new DrawError('编号数量不足');
     }
-    var rng = typeof randomFn === 'function' ? randomFn : Math.random;
+    var opts = options || {};
+    var rng = typeof options === 'function'
+      ? options
+      : (typeof opts.randomFn === 'function' ? opts.randomFn : Math.random);
+    var emptyMode = (typeof options === 'function' || opts.emptyMode !== 'nearest')
+      ? 'retry'
+      : 'nearest';
+
     var areas = frames.map(function (frame) {
       return tiles.map(function (tile) {
         return overlapArea(frame, tile);
       });
     });
+    var emptyFrames = [];
+    var effective = areas.map(function (row) {
+      return row.slice();
+    });
+
+    frames.forEach(function (frame, frameIndex) {
+      var maxArea = 0;
+      for (var t = 0; t < tiles.length; t += 1) {
+        if (areas[frameIndex][t] > maxArea) maxArea = areas[frameIndex][t];
+      }
+      if (maxArea > 1e-9) return;
+      emptyFrames.push(frameIndex);
+      if (emptyMode === 'nearest') {
+        for (var u = 0; u < tiles.length; u += 1) {
+          effective[frameIndex][u] = 1 / (1 + centerDistance(frame, tiles[u]));
+        }
+      }
+    });
+
+    if (emptyMode === 'retry' && emptyFrames.length) {
+      return { picks: [], emptyFrames: emptyFrames, mode: emptyMode };
+    }
 
     var bestScore = -1;
     var best = null;
@@ -156,7 +200,7 @@
         if (j === i) continue;
         for (var k = 0; k < tiles.length; k += 1) {
           if (k === i || k === j) continue;
-          var score = areas[0][i] + areas[1][j] + areas[2][k];
+          var score = effective[0][i] + effective[1][j] + effective[2][k];
           if (score > bestScore + 1e-9) {
             bestScore = score;
             best = [i, j, k];
@@ -169,7 +213,7 @@
       }
     }
 
-    return best.map(function (tileIndex, frameIndex) {
+    var picks = best.map(function (tileIndex, frameIndex) {
       return {
         frameIndex: frameIndex,
         tileIndex: tileIndex,
@@ -177,6 +221,8 @@
         area: areas[frameIndex][tileIndex]
       };
     });
+
+    return { picks: picks, emptyFrames: emptyFrames, mode: emptyMode };
   }
 
   function Round(ids, prizes, randomFn) {
