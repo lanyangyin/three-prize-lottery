@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>三人抽奖器 · 3 个奖品 · 5~50 人</title>
+  <meta name="description" content="只有 3 个奖品、5~50 人的现场抽奖工具：三等奖 → 二等奖 → 一等奖，中奖不重复，人不到场可重抽，全部在浏览器本地运行。">
+  <meta name="theme-color" content="#0b0d14">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="三人抽奖器">
+  <meta property="og:description" content="3 个奖品 · 5~50 人 · 中奖不重复。深色舞台 + 滚动揭晓的静态抽奖页。">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="site-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">抽</span>
+        <div class="brand-text">
+          <h1>三人抽奖器</h1>
+          <p>3 个奖品 · 5~50 人 · 中奖不重复</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <span class="pill">离线可用 · 无需登录</span>
+        <a class="gh-link" href="https://github.com/lanyangyin/three-prize-lottery" target="_blank" rel="noopener">GitHub ↗</a>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel setup" aria-label="抽奖设置">
+        <section class="setup-block names-block">
+          <div class="block-head">
+            <h2>参与者名单</h2>
+            <span class="badge" id="count-badge">0 人</span>
+          </div>
+          <p class="hint">一行一个名字，也支持逗号、顿号分隔，自动去重。</p>
+          <textarea id="names-input" spellcheck="false" autocomplete="off" aria-label="参与者名单"></textarea>
+          <div class="setup-actions">
+            <button class="btn btn-ghost" id="btn-sample" type="button">示例</button>
+            <button class="btn btn-ghost" id="btn-import" type="button">导入 TXT</button>
+            <button class="btn btn-ghost" id="btn-clear" type="button">清空</button>
+            <input type="file" id="file-input" accept=".txt,text/plain" hidden>
+          </div>
+          <p class="prob" id="prob-text">共 0 人 · 每人中奖概率 —</p>
+        </section>
+
+        <section class="setup-block history-block">
+          <div class="block-head">
+            <h2>历史记录</h2>
+            <button class="link-btn" id="btn-clear-history" type="button">清空</button>
+          </div>
+          <div class="history-list" id="history-list"></div>
+        </section>
+
+        <p class="privacy">所有数据只保存在你的浏览器里，不会上传到任何服务器。</p>
+      </aside>
+
+      <section class="panel draw-panel" id="draw-panel" aria-label="抽奖舞台">
+        <div class="stage-top">
+          <span class="next" id="next-text">下一个：三等奖</span>
+          <span class="remain" id="remain-text">待抽奖 0 人</span>
+        </div>
+
+        <div class="stage" id="stage">
+          <div class="ring" aria-hidden="true"></div>
+          <canvas id="confetti" aria-hidden="true"></canvas>
+          <p class="stage-prize" id="stage-prize">三等奖 → 二等奖 → 一等奖</p>
+          <div class="stage-name" id="stage-name">准备好了吗？</div>
+          <p class="stage-hint" id="stage-hint">按空格或点「开始抽奖」</p>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn-primary" id="btn-draw" type="button">
+            <span id="draw-label">开始抽奖</span>
+            <kbd id="draw-kbd">空格</kbd>
+          </button>
+          <div class="controls-side">
+            <button class="btn btn-secondary" id="btn-redraw" type="button" disabled>此人不到场 · 重抽</button>
+            <button class="btn btn-secondary" id="btn-reset" type="button">重置</button>
+            <button class="btn btn-secondary" id="btn-export" type="button" disabled>导出记录</button>
+            <button class="btn btn-secondary btn-icon" id="btn-fullscreen" type="button" title="全屏（投屏用）" aria-label="全屏（投屏用）">⛶</button>
+          </div>
+        </div>
+
+        <div class="cards" id="cards">
+          <article class="card" data-prize="一等奖">
+            <span class="card-prize">一等奖</span>
+            <span class="card-name">—</span>
+          </article>
+          <article class="card" data-prize="二等奖">
+            <span class="card-prize">二等奖</span>
+            <span class="card-name">—</span>
+          </article>
+          <article class="card" data-prize="三等奖">
+            <span class="card-prize">三等奖</span>
+            <span class="card-name">—</span>
+          </article>
+        </div>
+
+        <p class="excluded-note" id="excluded-note" hidden></p>
+
+        <div class="statusbar">
+          <span id="status-text" role="status">就绪 · 按空格或点「开始抽奖」</span>
+          <span class="status-tip">每人中奖概率 = 3 ÷ 人数</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>纯静态网页 · 数据只在本机 · <span id="footer-year">2026</span> · <a href="https://github.com/lanyangyin/three-prize-lottery" target="_blank" rel="noopener">开源于 GitHub</a></p>
+      <p class="sr-only" id="live-status" aria-live="polite"></p>
+    </footer>
+  </div>
+
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+  <dialog id="confirm-dialog" class="dialog">
+    <form method="dialog" class="dialog-card">
+      <h3 id="dialog-title">确认</h3>
+      <p id="dialog-message"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" value="cancel" type="submit">取消</button>
+        <button class="btn btn-primary" value="ok" id="dialog-ok" type="submit">确定</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="export-dialog" class="dialog dialog-wide">
+    <form method="dialog" class="dialog-card">
+      <h3>导出记录</h3>
+      <pre id="export-preview" class="export-preview"></pre>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" id="btn-copy" type="button">复制文本</button>
+        <button class="btn btn-primary" id="btn-download" type="button">下载 TXT</button>
+        <button class="btn btn-ghost" value="close" type="submit">关闭</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/core.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
