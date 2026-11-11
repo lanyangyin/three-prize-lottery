@@ -24,7 +24,7 @@
       </div>
       <div class="header-meta">
         <span class="pill">离线可用 · 无需登录</span>
-        <a class="gh-link" href="https://github.com/lanyangyin/three-prize-lottery" target="_blank" rel="noopener">GitHub ↗</a>
+        <a class="gh-link secret-link" href="https://github.com/lanyangyin/three-prize-lottery" target="_blank" rel="noopener">GitHub ↗</a>
       </div>
     </header>
 
@@ -158,7 +158,7 @@
     </main>
 
     <footer class="site-footer">
-      <p>纯静态网页 · 数据只在本机 · <span id="footer-year">2026</span> · <a href="https://github.com/lanyangyin/three-prize-lottery" target="_blank" rel="noopener">开源于 GitHub</a></p>
+      <p>纯静态网页 · 数据只在本机 · <span id="footer-year">2026</span><span class="secret-link"> · <a href="https://github.com/lanyangyin/three-prize-lottery" target="_blank" rel="noopener">开源于 GitHub</a></span></p>
       <p class="sr-only" id="live-status" aria-live="polite"></p>
     </footer>
   </div>
@@ -172,6 +172,26 @@
       <div class="dialog-actions">
         <button class="btn btn-ghost" value="cancel" type="submit">取消</button>
         <button class="btn btn-primary" value="ok" id="dialog-ok" type="submit">确定</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="secret-dialog" class="dialog">
+    <form class="dialog-card" id="secret-form" novalidate>
+      <h3>隐藏开奖</h3>
+      <p class="secret-note">指定一位参与者，他必定中奖；奖品序号留空则随机。其余两位中奖者和剩余奖品随机补全。</p>
+      <label class="field">
+        <span>参与者编号</span>
+        <input id="secret-id" type="text" inputmode="numeric" autocomplete="off" maxlength="20" placeholder="输入名单中的数字编号">
+      </label>
+      <label class="field">
+        <span>奖品序号（可选）</span>
+        <input id="secret-prize" type="text" inputmode="numeric" autocomplete="off" maxlength="1" placeholder="1 / 2 / 3，留空随机">
+      </label>
+      <p class="secret-error" id="secret-error" hidden></p>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" id="secret-cancel" type="button">取消</button>
+        <button class="btn btn-primary" type="submit">确定</button>
       </div>
     </form>
   </dialog>

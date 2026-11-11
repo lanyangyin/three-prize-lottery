@@ -95,6 +95,12 @@
     exportPreview: $('export-preview'),
     download: $('btn-download'),
     copy: $('btn-copy'),
+    secretDialog: $('secret-dialog'),
+    secretForm: $('secret-form'),
+    secretId: $('secret-id'),
+    secretPrize: $('secret-prize'),
+    secretError: $('secret-error'),
+    secretCancel: $('secret-cancel'),
     year: $('footer-year')
   };
 
@@ -660,6 +666,191 @@
     }
   }
 
+  /* ---------------- 搞怪分支：隐藏链接 + 手动开奖 ---------------- */
+
+  var SECRET_SEQUENCE = [
+    'ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown',
+    'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight',
+    'a', 'b', 'a', 'b'
+  ];
+  var secretProgress = 0;
+
+  function setGithubReveal(visible) {
+    document.documentElement.classList.toggle('reveal-github', Boolean(visible));
+  }
+
+  function isInteractiveElement(target) {
+    if (!target || !target.closest) return false;
+    return Boolean(target.closest(
+      'input, textarea, select, button, a, label, summary, [contenteditable="true"]'
+    ));
+  }
+
+  function showSecretError(message) {
+    el.secretError.hidden = !message;
+    el.secretError.textContent = message || '';
+  }
+
+  function openSecretDialog() {
+    if (el.secretDialog.open) return;
+    el.secretId.value = '';
+    el.secretPrize.value = '';
+    showSecretError('');
+    el.secretDialog.showModal();
+    el.secretId.focus();
+  }
+
+  function pickSecretWinners(ids, targetId) {
+    var others = shuffleIds(ids.filter(function (id) {
+      return id !== targetId;
+    }));
+    return [targetId].concat(others.slice(0, 2));
+  }
+
+  function applyForcedPrize(round, targetId, prizeIndex) {
+    if (prizeIndex === null) return;
+    var desired = round.prizes[prizeIndex - 1];
+    var targetPos = -1;
+    var prizePos = -1;
+    round.assignments.forEach(function (item, index) {
+      if (item.id === targetId) targetPos = index;
+      if (item.prize === desired) prizePos = index;
+    });
+    if (targetPos < 0 || prizePos < 0 || targetPos === prizePos) return;
+    var oldPrize = round.assignments[targetPos].prize;
+    round.assignments[targetPos].prize = round.assignments[prizePos].prize;
+    round.assignments[prizePos].prize = oldPrize;
+  }
+
+  function handleSecretSubmit(event) {
+    event.preventDefault();
+    showSecretError('');
+
+    if (state.busy) {
+      showSecretError('正在弹射或分配奖品，请稍后再试');
+      return;
+    }
+
+    var targetId = el.secretId.value.trim();
+    var prizeRaw = el.secretPrize.value.trim();
+    if (!/^\d+$/.test(targetId)) {
+      showSecretError('参与者编号只能是数字');
+      return;
+    }
+
+    var prizeIndex = null;
+    if (prizeRaw) {
+      if (!/^[123]$/.test(prizeRaw)) {
+        showSecretError('奖品序号只能填 1、2、3，或留空随机');
+        return;
+      }
+      prizeIndex = Number(prizeRaw);
+    }
+
+    var round = state.round;
+    if (round && (round.winners.length || round.assigned)) {
+      showSecretError('当前已经有抽奖结果了，请先点「重置」');
+      return;
+    }
+
+    if (round) {
+      if (round.ids.indexOf(targetId) === -1) {
+        showSecretError('这个编号不在当前名单里');
+        return;
+      }
+    } else {
+      var problem = prizeProblem();
+      if (problem) {
+        showSecretError(problem);
+        return;
+      }
+      var parsed = parsedInput();
+      if (parsed.invalid.length) {
+        showSecretError('名单里有非数字编号，请先修改');
+        return;
+      }
+      if (parsed.ids.indexOf(targetId) === -1) {
+        showSecretError('这个编号不在当前名单里');
+        return;
+      }
+      try {
+        new Round(parsed.ids, readPrizeInputs());
+      } catch (err) {
+        showSecretError(err.message);
+        return;
+      }
+      if (!createRound()) {
+        showSecretError('创建本轮失败，请检查左侧编号和奖品');
+        return;
+      }
+      round = state.round;
+    }
+
+    var winners = pickSecretWinners(round.ids, targetId);
+
+    // 让三个框当前压住的格子直接显示这三位中奖者，避免画面和结果对不上
+    try {
+      var framePick = Core.selectWinners(board.getFrames(), board.tiles, {
+        emptyMode: 'nearest',
+        randomFn: tieRandom
+      });
+      board.remapTiles(
+        framePick.picks.map(function (pick) { return pick.tileIndex; }),
+        winners
+      );
+    } catch (err) {
+      /* 画面映射失败不阻止开奖 */
+    }
+
+    try {
+      round.setWinners(winners);
+      round.assignPrizes();
+    } catch (err) {
+      showSecretError(err.message);
+      return;
+    }
+    applyForcedPrize(round, targetId, prizeIndex);
+
+    state.busy = false;
+    state.assigning = false;
+    state.needReframe = false;
+    state.emptyFrameIndexes = [];
+    board.setEmptyFrames([]);
+    board.setSelected(round.winners);
+    board.setPrizeLabels(['', '', '']);
+    updateAll();
+    setStatus('抽奖完成');
+    el.live.textContent = round.results().map(function (item) {
+      return item.prize + '：' + item.id;
+    }).join('；');
+    fireConfetti();
+    saveRecord();
+    persist();
+    el.secretDialog.close();
+  }
+
+  function handleSecretSequence(event) {
+    if (event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isInteractiveElement(event.target)) return;
+    if (document.querySelector('dialog[open]')) return;
+
+    var key = event.key;
+    var normalized = key.length === 1 ? key.toLowerCase() : key;
+    var expected = SECRET_SEQUENCE[secretProgress];
+
+    if (normalized === expected) {
+      event.preventDefault();
+      secretProgress += 1;
+      if (secretProgress === SECRET_SEQUENCE.length) {
+        secretProgress = 0;
+        openSecretDialog();
+      }
+    } else {
+      secretProgress = normalized === SECRET_SEQUENCE[0] ? 1 : 0;
+    }
+  }
+
   /* ---------------- 抽奖 ---------------- */
 
   function createRound() {
@@ -1065,6 +1256,44 @@
     });
   });
   el.fullscreen.addEventListener('click', toggleFullscreen);
+
+  // 按住 Ctrl 才显示 GitHub 链接
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Control') setGithubReveal(true);
+  });
+  document.addEventListener('keyup', function (event) {
+    if (event.key === 'Control') setGithubReveal(false);
+  });
+  window.addEventListener('blur', function () {
+    setGithubReveal(false);
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) setGithubReveal(false);
+  });
+
+  // 在空白处输入 ↑ ↑ ↓ ↓ ← → ← → A B A B
+  document.addEventListener('keydown', handleSecretSequence);
+
+  el.secretForm.addEventListener('submit', handleSecretSubmit);
+  el.secretCancel.addEventListener('click', function () {
+    el.secretDialog.close();
+  });
+  el.secretDialog.addEventListener('close', function () {
+    showSecretError('');
+    secretProgress = 0;
+  });
+
+  // 点击周围空白处时让输入框失焦，方便直接输入彩蛋序列
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    if (target.closest('input, textarea, select, button, a, label, summary, [contenteditable="true"]')) {
+      return;
+    }
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+  });
 
   el.names.addEventListener('input', function () {
     if (state.round) return;

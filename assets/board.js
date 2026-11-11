@@ -447,6 +447,63 @@
     this.draw();
   };
 
+  // 隐藏彩蛋用：把指定编号搬到三个已选框选中的格子里，保持画面自洽
+  Board.prototype.remapTiles = function (selectedIndexes, desiredIds) {
+    if (!Array.isArray(selectedIndexes) || selectedIndexes.length !== 3) return false;
+    if (!Array.isArray(desiredIds) || desiredIds.length !== 3) return false;
+    if (new Set(desiredIds).size !== 3) return false;
+    if (new Set(selectedIndexes).size !== 3) return false;
+
+    var tiles = this.tiles;
+    var oldIds = selectedIndexes.map(function (index) {
+      return tiles[index] ? tiles[index].id : null;
+    });
+    if (oldIds.indexOf(null) !== -1) return false;
+
+    var desiredSet = Object.create(null);
+    desiredIds.forEach(function (id) {
+      desiredSet[id] = true;
+    });
+    var oldSet = Object.create(null);
+    oldIds.forEach(function (id) {
+      oldSet[id] = true;
+    });
+
+    var missing = desiredIds.filter(function (id) {
+      return !oldSet[id];
+    });
+    var displaced = oldIds.filter(function (id) {
+      return !desiredSet[id];
+    });
+    var origins = [];
+    var ok = true;
+    missing.forEach(function (id) {
+      var found = -1;
+      for (var i = 0; i < tiles.length; i += 1) {
+        if (tiles[i].id === id) {
+          found = i;
+          break;
+        }
+      }
+      if (found < 0) ok = false;
+      origins.push(found);
+    });
+    if (!ok || displaced.length !== origins.length) return false;
+
+    selectedIndexes.forEach(function (tileIndex, index) {
+      tiles[tileIndex].id = desiredIds[index];
+    });
+    displaced.forEach(function (id, index) {
+      tiles[origins[index]].id = id;
+    });
+
+    this.ids = tiles.map(function (tile) {
+      return tile.id;
+    });
+    this.draw();
+    return true;
+  };
+
   Board.prototype.setEmptyFrames = function (indexes) {
     this.emptyFrames = (indexes || []).slice();
     this.draw();
