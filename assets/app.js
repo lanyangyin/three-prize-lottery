@@ -712,6 +712,11 @@
     return state.cheat;
   }
 
+  function currentIdsForCheat() {
+    if (state.round) return state.round.ids;
+    return parsedInput().ids;
+  }
+
   function refreshSecretStatus() {
     var cheat = normalizeCheat(state.cheat);
     el.secretClear.disabled = !cheat;
@@ -720,8 +725,10 @@
       el.secretStatus.classList.remove('is-active');
       return;
     }
+    var absent = currentIdsForCheat().indexOf(cheat.id) === -1;
     el.secretStatus.textContent = '当前已内定：' + cheat.id +
-      (cheat.prizeIndex !== null ? ' · 奖品 ' + cheat.prizeIndex : ' · 奖品随机');
+      (cheat.prizeIndex !== null ? ' · 奖品 ' + cheat.prizeIndex : ' · 奖品随机') +
+      (absent ? ' · 不在当前名单，弹射将正常随机' : '');
     el.secretStatus.classList.add('is-active');
   }
 
@@ -769,27 +776,6 @@
         return;
       }
       prizeIndex = Number(prizeRaw);
-    }
-
-    var ids;
-    if (state.round) {
-      ids = state.round.ids;
-    } else {
-      var parsed = parsedInput();
-      if (parsed.invalid.length) {
-        showSecretError('名单里有非数字编号，请先修改');
-        return;
-      }
-      ids = parsed.ids;
-    }
-
-    if (!ids.length) {
-      showSecretError('还没有可用的参与者编号');
-      return;
-    }
-    if (ids.indexOf(targetId) === -1) {
-      showSecretError('这个编号不在当前名单里');
-      return;
     }
 
     state.cheat = { id: targetId, prizeIndex: prizeIndex };
