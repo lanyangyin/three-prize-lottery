@@ -21,6 +21,8 @@
   var WALL_REST = 0.9;
   var HIT_REST = 0.94;
   var MAX_SECONDS = 9;
+  var PLAN_DT = 1 / 60;
+  var PLAN_MAX_STEPS = Math.ceil(MAX_SECONDS / PLAN_DT);
   var FONT_STACK = '"Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif';
   var MONO_STACK = '"Cascadia Mono", "Consolas", "Courier New", monospace';
 
@@ -86,6 +88,252 @@
       a.y < b.y + b.h + p && a.y + a.h + p > b.y;
   }
 
+  /* ---------- 弹射前路径预演：固定步长、可回放 ---------- */
+
+  function clonePlanFrame(frame, w, h) {
+    return {
+      x: clamp(Number(frame.x) || 0, 0, BOARD_W - w),
+      y: clamp(Number(frame.y) || 0, 0, BOARD_H - h),
+      w: w,
+      h: h,
+      vx: 0,
+      vy: 0,
+      k: 0,
+      stopped: true
+    };
+  }
+
+  function simCollide(frames, stats) {
+    for (var i = 0; i < frames.length; i += 1) {
+      for (var j = i + 1; j < frames.length; j += 1) {
+        var a = frames[i];
+        var b = frames[j];
+        var overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        var overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+
+        if (overlapX < overlapY) {
+          var nx = (a.x + a.w / 2) < (b.x + b.w / 2) ? 1 : -1;
+          var push = overlapX / 2;
+          a.x -= nx * push;
+          b.x += nx * push;
+          var rvx = (b.vx - a.vx) * nx;
+          if (rvx < 0) {
+            var jx = -(1 + HIT_REST) * rvx / 2;
+            a.vx -= jx * nx;
+            b.vx += jx * nx;
+            if (stats) stats.frameHits += 1;
+          }
+        } else {
+          var ny = (a.y + a.h / 2) < (b.y + b.h / 2) ? 1 : -1;
+          var pushY = overlapY / 2;
+          a.y -= ny * pushY;
+          b.y += ny * pushY;
+          var rvy = (b.vy - a.vy) * ny;
+          if (rvy < 0) {
+            var jy = -(1 + HIT_REST) * rvy / 2;
+            a.vy -= jy * ny;
+            b.vy += jy * ny;
+            if (stats) stats.frameHits += 1;
+          }
+        }
+      }
+    }
+  }
+
+  function simStep(frames, dt, stats) {
+    frames.forEach(function (frame) {
+      if (frame.stopped) return;
+      var speed = speedOf(frame);
+      if (speed < STOP_SPEED) {
+        frame.vx = 0;
+        frame.vy = 0;
+        frame.stopped = true;
+        return;
+      }
+      var damping = Math.exp(-frame.k * dt);
+      frame.vx *= damping;
+      frame.vy *= damping;
+      var oldX = frame.x;
+      var oldY = frame.y;
+      frame.x += frame.vx * dt;
+      frame.y += frame.vy * dt;
+      stats.distance += Math.hypot(frame.x - oldX, frame.y - oldY);
+
+      if (frame.x < 0) {
+        frame.x = 0;
+        frame.vx = Math.abs(frame.vx) * WALL_REST;
+        stats.wallHits += 1;
+      }
+      if (frame.x + frame.w > BOARD_W) {
+        frame.x = BOARD_W - frame.w;
+        frame.vx = -Math.abs(frame.vx) * WALL_REST;
+        stats.wallHits += 1;
+      }
+      if (frame.y < 0) {
+        frame.y = 0;
+        frame.vy = Math.abs(frame.vy) * WALL_REST;
+        stats.wallHits += 1;
+      }
+      if (frame.y + frame.h > BOARD_H) {
+        frame.y = BOARD_H - frame.h;
+        frame.vy = -Math.abs(frame.vy) * WALL_REST;
+        stats.wallHits += 1;
+      }
+    });
+
+    for (var iteration = 0; iteration < 4; iteration += 1) {
+      simCollide(frames, stats);
+    }
+
+    frames.forEach(function (frame) {
+      frame.x = clamp(frame.x, 0, BOARD_W - frame.w);
+      frame.y = clamp(frame.y, 0, BOARD_H - frame.h);
+      var speed = speedOf(frame);
+      if (speed < STOP_SPEED) {
+        frame.vx = 0;
+        frame.vy = 0;
+        frame.stopped = true;
+      } else {
+        frame.stopped = false;
+      }
+    });
+  }
+
+  function simSeparate(frames) {
+    for (var i = 0; i < 8; i += 1) simCollide(frames, null);
+    frames.forEach(function (frame) {
+      frame.x = clamp(frame.x, 0, BOARD_W - frame.w);
+      frame.y = clamp(frame.y, 0, BOARD_H - frame.h);
+    });
+  }
+
+  function simAllStopped(frames) {
+    return frames.every(function (frame) { return frame.stopped; });
+  }
+
+  function makeLaunchParams(startFrames) {
+    var frictions = [0.70, 0.92, 1.14];
+    for (var s = frictions.length - 1; s > 0; s -= 1) {
+      var j = Math.floor(Math.random() * (s + 1));
+      var tmp = frictions[s];
+      frictions[s] = frictions[j];
+      frictions[j] = tmp;
+    }
+    return startFrames.map(function (frame, index) {
+      var targetX = BOARD_W / 2 + rand(-190, 190);
+      var targetY = BOARD_H / 2 + rand(-120, 120);
+      var angle = Math.atan2(targetY - (frame.y + frame.h / 2),
+        targetX - (frame.x + frame.w / 2)) + rand(-0.4, 0.4);
+      var speed = rand(640, 840);
+      return {
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        k: frictions[index] + rand(-0.04, 0.04)
+      };
+    });
+  }
+
+  function framesWithParams(startFrames, params) {
+    return startFrames.map(function (frame, index) {
+      return {
+        x: frame.x,
+        y: frame.y,
+        w: frame.w,
+        h: frame.h,
+        vx: params[index].vx,
+        vy: params[index].vy,
+        k: params[index].k,
+        stopped: false
+      };
+    });
+  }
+
+  function coverageInfo(frames, tiles, targetIndex) {
+    var targetMax = false;
+    var allCover = true;
+    frames.forEach(function (frame) {
+      var maxArea = 0;
+      var targetArea = 0;
+      tiles.forEach(function (tile, index) {
+        var width = Math.min(frame.x + frame.w, tile.x + tile.w) - Math.max(frame.x, tile.x);
+        var height = Math.min(frame.y + frame.h, tile.y + tile.h) - Math.max(frame.y, tile.y);
+        var area = width > 0 && height > 0 ? width * height : 0;
+        if (area > maxArea) maxArea = area;
+        if (index === targetIndex) targetArea = area;
+      });
+      if (maxArea <= 1) allCover = false;
+      if (targetArea >= maxArea - 1) targetMax = true;
+    });
+    return { targetMax: targetMax, allCover: allCover };
+  }
+
+  function simulateCandidate(startFrames, params, tiles, targetIndex) {
+    var frames = framesWithParams(startFrames, params);
+    var stats = { wallHits: 0, frameHits: 0, distance: 0 };
+    var steps = 0;
+    for (; steps < PLAN_MAX_STEPS; steps += 1) {
+      simStep(frames, PLAN_DT, stats);
+      if (simAllStopped(frames)) break;
+    }
+    if (!simAllStopped(frames)) {
+      frames.forEach(function (frame) {
+        frame.vx = 0;
+        frame.vy = 0;
+        frame.stopped = true;
+      });
+    }
+    simSeparate(frames);
+
+    var displacement = 0;
+    frames.forEach(function (frame, index) {
+      displacement += Math.hypot(frame.x - startFrames[index].x, frame.y - startFrames[index].y);
+    });
+    var info = coverageInfo(frames, tiles, targetIndex);
+    return {
+      frames: frames,
+      targetMax: info.targetMax,
+      allCover: info.allCover,
+      pathRatio: stats.distance / Math.max(displacement, 1),
+      steps: steps + 1,
+      stats: stats
+    };
+  }
+
+  function recordTrajectory(startFrames, params, tiles) {
+    var frames = framesWithParams(startFrames, params);
+    var stats = { wallHits: 0, frameHits: 0, distance: 0 };
+    var steps = [frames.map(function (frame) {
+      return { x: frame.x, y: frame.y };
+    })];
+
+    for (var step = 0; step < PLAN_MAX_STEPS; step += 1) {
+      simStep(frames, PLAN_DT, stats);
+      steps.push(frames.map(function (frame) {
+        return { x: frame.x, y: frame.y };
+      }));
+      if (simAllStopped(frames)) break;
+    }
+    if (!simAllStopped(frames)) {
+      frames.forEach(function (frame) {
+        frame.vx = 0;
+        frame.vy = 0;
+        frame.stopped = true;
+      });
+    }
+    simSeparate(frames);
+    steps.push(frames.map(function (frame) {
+      return { x: frame.x, y: frame.y };
+    }));
+
+    return {
+      steps: steps,
+      frames: frames,
+      stats: stats,
+      duration: (steps.length - 1) * PLAN_DT
+    };
+  }
+
   function Board(canvas, options) {
     var opts = options || {};
     this.canvas = canvas;
@@ -114,7 +362,9 @@
     this.resolveLaunch = null;
     this.startedAt = 0;
     this.last = 0;
+    this.launchPlan = null;
     this.tick = this.tick.bind(this);
+    this.tickPlanned = this.tickPlanned.bind(this);
     this.resize();
     this.placeIdleFrames();
     this.draw();
@@ -242,6 +492,7 @@
 
   Board.prototype.launch = function (ids) {
     this.stop();
+    this.launchPlan = null;
     this.ids = (ids || []).slice();
     this.tiles = layoutTiles(this.ids, this.gap);
     this.highlightIds = [];
@@ -261,7 +512,165 @@
     });
   };
 
+  Board.prototype.launchPlanned = function (ids, options) {
+    this.stop();
+    this.ids = (ids || []).slice();
+    this.tiles = layoutTiles(this.ids, this.gap);
+    this.highlightIds = [];
+    this.prizeLabels = ['', '', ''];
+    this.emptyFrames = [];
+    this.measureIdFont();
+
+    var self = this;
+    if (this.frames.length !== 3) this.placeIdleFrames();
+    var startFrames = this.frames.map(function (frame) {
+      return clonePlanFrame(frame, self.frameW, self.frameH);
+    });
+    var plan = this.findPlan(startFrames, options || {});
+    this.launchPlan = plan;
+
+    this.frames = startFrames.map(function (frame) {
+      return {
+        x: frame.x,
+        y: frame.y,
+        w: frame.w,
+        h: frame.h,
+        vx: 0,
+        vy: 0,
+        k: 0,
+        stopped: false
+      };
+    });
+    if (plan) {
+      plan.steps[0].forEach(function (position, index) {
+        self.frames[index].x = position.x;
+        self.frames[index].y = position.y;
+      });
+    }
+
+    this.mode = 'running';
+    this.startedAt = performance.now();
+    this.last = this.startedAt;
+    this.draw();
+
+    return new Promise(function (resolve) {
+      self.resolveLaunch = resolve;
+      if (plan) {
+        self.raf = global.requestAnimationFrame(self.tickPlanned);
+      } else {
+        self.armFrames();
+        self.raf = global.requestAnimationFrame(self.tick);
+      }
+    });
+  };
+
+  Board.prototype.findPlan = function (startFrames, options) {
+    var opts = options || {};
+    var targetId = opts.targetId;
+    var targetIndex = -1;
+    for (var i = 0; i < this.tiles.length; i += 1) {
+      if (this.tiles[i].id === targetId) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex < 0) return null;
+
+    var maxCandidates = opts.maxCandidates || 600;
+    var validate = opts.validate;
+    var passes = [
+      { wall: 1, frame: 1, total: 3 },
+      { wall: 1, frame: 1, total: 2 },
+      { wall: 0, frame: 1, total: 2 },
+      { wall: 1, frame: 0, total: 1 },
+      { wall: 0, frame: 0, total: 0 }
+    ];
+    var totalCandidates = 0;
+
+    for (var p = 0; p < passes.length; p += 1) {
+      var pass = passes[p];
+      var accepted = [];
+      for (var c = 0; c < maxCandidates; c += 1) {
+        totalCandidates += 1;
+        var params = makeLaunchParams(startFrames);
+        var sim = simulateCandidate(startFrames, params, this.tiles, targetIndex);
+        if (!sim.allCover || !sim.targetMax) continue;
+
+        var totalBounces = sim.stats.wallHits + sim.stats.frameHits;
+        if (totalBounces < pass.total) continue;
+        if (sim.stats.wallHits < pass.wall || sim.stats.frameHits < pass.frame) continue;
+        if (validate && !validate(sim.frames, this.tiles)) continue;
+
+        accepted.push({
+          params: params,
+          stats: sim.stats,
+          pathRatio: sim.pathRatio
+        });
+        if (accepted.length >= 16) break;
+      }
+
+      if (accepted.length) {
+        var chosen = accepted[Math.floor(Math.random() * accepted.length)];
+        var plan = recordTrajectory(startFrames, chosen.params, this.tiles);
+        plan.stats = chosen.stats;
+        plan.pathRatio = chosen.pathRatio;
+        plan.candidates = totalCandidates;
+        return plan;
+      }
+    }
+
+    return null;
+  };
+
+  Board.prototype.tickPlanned = function (now) {
+    if (this.mode !== 'running' || !this.launchPlan) return;
+    var plan = this.launchPlan;
+    var maxIndex = plan.steps.length - 1;
+    var elapsed = (now - this.startedAt) / 1000;
+    var index = elapsed / PLAN_DT;
+    if (!isFinite(index) || index < 0) index = 0;
+
+    if (index >= maxIndex) {
+      var finalPositions = plan.steps[maxIndex];
+      for (var i = 0; i < this.frames.length; i += 1) {
+        this.frames[i].x = finalPositions[i].x;
+        this.frames[i].y = finalPositions[i].y;
+        this.frames[i].vx = 0;
+        this.frames[i].vy = 0;
+        this.frames[i].stopped = true;
+      }
+      this.mode = 'stopped';
+      this.raf = 0;
+      this.launchPlan = null;
+      this.draw();
+      var resolve = this.resolveLaunch;
+      this.resolveLaunch = null;
+      if (resolve) {
+        resolve({
+          frames: this.getFrames(),
+          tiles: this.tiles.map(function (tile) {
+            return { id: tile.id, x: tile.x, y: tile.y, w: tile.w, h: tile.h };
+          })
+        });
+      }
+      return;
+    }
+
+    var stepIndex = Math.floor(index);
+    var frac = index - stepIndex;
+    var from = plan.steps[stepIndex];
+    var to = plan.steps[stepIndex + 1];
+    for (var k = 0; k < this.frames.length; k += 1) {
+      this.frames[k].x = from[k].x + (to[k].x - from[k].x) * frac;
+      this.frames[k].y = from[k].y + (to[k].y - from[k].y) * frac;
+      this.frames[k].stopped = false;
+    }
+    this.draw();
+    this.raf = global.requestAnimationFrame(this.tickPlanned);
+  };
+
   Board.prototype.stop = function () {
+    this.launchPlan = null;
     if (this.raf) {
       global.cancelAnimationFrame(this.raf);
       this.raf = 0;
@@ -445,63 +854,6 @@
   Board.prototype.setSelected = function (ids) {
     this.highlightIds = (ids || []).slice();
     this.draw();
-  };
-
-  // 隐藏彩蛋用：把指定编号搬到三个已选框选中的格子里，保持画面自洽
-  Board.prototype.remapTiles = function (selectedIndexes, desiredIds) {
-    if (!Array.isArray(selectedIndexes) || selectedIndexes.length !== 3) return false;
-    if (!Array.isArray(desiredIds) || desiredIds.length !== 3) return false;
-    if (new Set(desiredIds).size !== 3) return false;
-    if (new Set(selectedIndexes).size !== 3) return false;
-
-    var tiles = this.tiles;
-    var oldIds = selectedIndexes.map(function (index) {
-      return tiles[index] ? tiles[index].id : null;
-    });
-    if (oldIds.indexOf(null) !== -1) return false;
-
-    var desiredSet = Object.create(null);
-    desiredIds.forEach(function (id) {
-      desiredSet[id] = true;
-    });
-    var oldSet = Object.create(null);
-    oldIds.forEach(function (id) {
-      oldSet[id] = true;
-    });
-
-    var missing = desiredIds.filter(function (id) {
-      return !oldSet[id];
-    });
-    var displaced = oldIds.filter(function (id) {
-      return !desiredSet[id];
-    });
-    var origins = [];
-    var ok = true;
-    missing.forEach(function (id) {
-      var found = -1;
-      for (var i = 0; i < tiles.length; i += 1) {
-        if (tiles[i].id === id) {
-          found = i;
-          break;
-        }
-      }
-      if (found < 0) ok = false;
-      origins.push(found);
-    });
-    if (!ok || displaced.length !== origins.length) return false;
-
-    selectedIndexes.forEach(function (tileIndex, index) {
-      tiles[tileIndex].id = desiredIds[index];
-    });
-    displaced.forEach(function (id, index) {
-      tiles[origins[index]].id = id;
-    });
-
-    this.ids = tiles.map(function (tile) {
-      return tile.id;
-    });
-    this.draw();
-    return true;
   };
 
   Board.prototype.setEmptyFrames = function (indexes) {

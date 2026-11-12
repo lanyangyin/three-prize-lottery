@@ -736,50 +736,6 @@
     el.secretId.focus();
   }
 
-  function rectOverlapArea(a, b) {
-    var width = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-    var height = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-    return width > 0 && height > 0 ? width * height : 0;
-  }
-
-  // 只把目标换到某个框真正覆盖面积最大的格子上，不制造“大格子没选中”的破绽
-  function forceCheatSelection(frames, tiles, picks, targetId) {
-    var selectedIndexes = picks.map(function (pick) { return pick.tileIndex; });
-    var winners = picks.map(function (pick) { return pick.id; });
-    var candidates = [];
-
-    for (var frameIndex = 0; frameIndex < 3; frameIndex += 1) {
-      var frame = frames[frameIndex];
-      var normalTile = selectedIndexes[frameIndex];
-      if (!frame || !tiles[normalTile]) continue;
-
-      var normalArea = rectOverlapArea(frame, tiles[normalTile]);
-      var maxArea = 0;
-      for (var tileIndex = 0; tileIndex < tiles.length; tileIndex += 1) {
-        var area = rectOverlapArea(frame, tiles[tileIndex]);
-        if (area > maxArea) maxArea = area;
-      }
-      if (maxArea <= 1) continue;
-      candidates.push({ frame: frameIndex, ratio: normalArea / maxArea });
-    }
-
-    if (!candidates.length) {
-      winners[0] = targetId;
-      return { winners: winners, selectedIndexes: selectedIndexes };
-    }
-
-    // 优先选“该框真正选中的格子就是最大覆盖格”的框；若都冲突，选比例最高的
-    candidates.sort(function (a, b) { return b.ratio - a.ratio; });
-    var bestRatio = candidates[0].ratio;
-    var best = candidates.filter(function (item) {
-      return item.ratio >= bestRatio - 0.02;
-    });
-    var chosen = best[Math.floor(Math.random() * best.length)];
-
-    winners[chosen.frame] = targetId;
-    return { winners: winners, selectedIndexes: selectedIndexes };
-  }
-
   function applyForcedPrize(round, targetId, prizeIndex) {
     if (prizeIndex === null) return;
     var desired = round.prizes[prizeIndex - 1];
@@ -923,7 +879,30 @@
     setStatus('三个框正在弹射，等待它们停下……');
 
     // 弹射前重新随机排列编号位置，保证每个编号机会相同
-    board.launch(shuffleIds(state.round.ids)).then(function (result) {
+    var launchIds = shuffleIds(state.round.ids);
+    var cheat = activeCheatFor(state.round);
+    var launchPromise;
+    if (cheat) {
+      launchPromise = board.launchPlanned(launchIds, {
+        targetId: cheat.id,
+        validate: function (frames, tiles) {
+          try {
+            var planned = Core.selectWinners(frames, tiles, {
+              emptyMode: 'nearest',
+              randomFn: tieRandom
+            });
+            return planned.emptyFrames.length === 0 &&
+              planned.picks.some(function (pick) { return pick.id === cheat.id; });
+          } catch (err) {
+            return false;
+          }
+        }
+      });
+    } else {
+      launchPromise = board.launch(launchIds);
+    }
+
+    launchPromise.then(function (result) {
       if (!result) {
         state.busy = false;
         updateAll();
@@ -963,12 +942,6 @@
       board.setEmptyFrames([]);
 
       var winners = selection.picks.map(function (pick) { return pick.id; });
-      var cheat = activeCheatFor(state.round);
-      if (cheat && winners.indexOf(cheat.id) === -1) {
-        var forced = forceCheatSelection(result.frames, result.tiles, selection.picks, cheat.id);
-        winners = forced.winners;
-        board.remapTiles(forced.selectedIndexes, winners);
-      }
 
       try {
         state.round.setWinners(winners);
