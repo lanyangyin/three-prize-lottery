@@ -742,41 +742,41 @@
     return width > 0 && height > 0 ? width * height : 0;
   }
 
-  // 在不明显的位置把目标编号塞进某一帧：优先挑框边缘只压到一点的格子
+  // 只把目标换到某个框真正覆盖面积最大的格子上，不制造“大格子没选中”的破绽
   function forceCheatSelection(frames, tiles, picks, targetId) {
     var selectedIndexes = picks.map(function (pick) { return pick.tileIndex; });
     var winners = picks.map(function (pick) { return pick.id; });
-    var subtle = [];
+    var candidates = [];
 
     for (var frameIndex = 0; frameIndex < 3; frameIndex += 1) {
       var frame = frames[frameIndex];
-      if (!frame) continue;
       var normalTile = selectedIndexes[frameIndex];
-      var otherA = selectedIndexes[(frameIndex + 1) % 3];
-      var otherB = selectedIndexes[(frameIndex + 2) % 3];
-      var frameArea = frame.w * frame.h;
+      if (!frame || !tiles[normalTile]) continue;
+
+      var normalArea = rectOverlapArea(frame, tiles[normalTile]);
+      var maxArea = 0;
       for (var tileIndex = 0; tileIndex < tiles.length; tileIndex += 1) {
-        if (tileIndex === normalTile || tileIndex === otherA || tileIndex === otherB) continue;
         var area = rectOverlapArea(frame, tiles[tileIndex]);
-        if (area <= 1) continue;
-        var tileArea = tiles[tileIndex].w * tiles[tileIndex].h;
-        if (area >= frameArea * 0.035 && area <= frameArea * 0.45 &&
-            area <= tileArea * 0.65) {
-          subtle.push({ frame: frameIndex, tile: tileIndex });
-        }
+        if (area > maxArea) maxArea = area;
       }
+      if (maxArea <= 1) continue;
+      candidates.push({ frame: frameIndex, ratio: normalArea / maxArea });
     }
 
-    var chosen;
-    if (subtle.length && Math.random() < 0.72) {
-      chosen = subtle[Math.floor(Math.random() * subtle.length)];
-    } else {
-      var normalFrame = Math.floor(Math.random() * 3);
-      chosen = { frame: normalFrame, tile: selectedIndexes[normalFrame] };
+    if (!candidates.length) {
+      winners[0] = targetId;
+      return { winners: winners, selectedIndexes: selectedIndexes };
     }
+
+    // 优先选“该框真正选中的格子就是最大覆盖格”的框；若都冲突，选比例最高的
+    candidates.sort(function (a, b) { return b.ratio - a.ratio; });
+    var bestRatio = candidates[0].ratio;
+    var best = candidates.filter(function (item) {
+      return item.ratio >= bestRatio - 0.02;
+    });
+    var chosen = best[Math.floor(Math.random() * best.length)];
 
     winners[chosen.frame] = targetId;
-    selectedIndexes[chosen.frame] = chosen.tile;
     return { winners: winners, selectedIndexes: selectedIndexes };
   }
 
