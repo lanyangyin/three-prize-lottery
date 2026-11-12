@@ -1,12 +1,12 @@
 # 三人抽奖器 · 选框弹射版
 
-> 这是 **`easter-egg` 搞怪分支**；GitHub Pages 线上部署的仍然是 `main`，彩蛋只在分支代码和本地生效。
+> 这是 **`easter-egg` 搞怪分支**，当前 GitHub Pages 线上地址已指向这个分支。
 
 > 把 **11 位左右的数字编号**平铺在板子上，三个悬浮选框带着不同的摩擦力随机弹射、互相碰撞且不重叠；停下后每个框选覆盖面积最大的编号，再把三个不同奖品随机分配给这三位中奖者。**每人最多中一个**。选框大小、格子间距、空位处理都可以调。
 
 ![界面截图](docs/screenshot.png)
 
-**线上主站（main）：** https://lanyangyin.github.io/three-prize-lottery/
+**线上地址：** https://lanyangyin.github.io/three-prize-lottery/
 
 ## 玩法
 
