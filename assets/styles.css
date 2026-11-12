@@ -1235,6 +1235,32 @@ html.reveal-github .secret-link {
   color: #4d5470;
 }
 
+.secret-status {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--sub);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.secret-status.is-active {
+  border-color: rgba(255, 204, 85, 0.35);
+  color: var(--gold);
+  background: rgba(255, 204, 85, 0.05);
+}
+
+.secret-clear {
+  margin-right: auto;
+  color: var(--red) !important;
+  border-color: rgba(255, 107, 127, 0.28) !important;
+}
+
+.secret-clear:disabled {
+  opacity: 0.35;
+}
+
 .secret-error {
   margin: 0;
   color: var(--red);

@@ -42,7 +42,8 @@
     emptyFrameIndexes: [],
     history: [],
     startedAt: null,
-    recordId: null
+    recordId: null,
+    cheat: null
   };
 
   function $(id) {
@@ -99,7 +100,9 @@
     secretForm: $('secret-form'),
     secretId: $('secret-id'),
     secretPrize: $('secret-prize'),
+    secretStatus: $('secret-status'),
     secretError: $('secret-error'),
+    secretClear: $('secret-clear'),
     secretCancel: $('secret-cancel'),
     year: $('footer-year')
   };
@@ -292,6 +295,17 @@
     }
   }
 
+  function normalizeCheat(raw) {
+    if (!raw) return null;
+    var id = String(raw.id || '');
+    if (!/^\d+$/.test(id)) return null;
+    var prizeIndex = raw.prizeIndex === null || raw.prizeIndex === undefined
+      ? null
+      : Number(raw.prizeIndex);
+    if (prizeIndex !== null && [1, 2, 3].indexOf(prizeIndex) === -1) return null;
+    return { id: id, prizeIndex: prizeIndex };
+  }
+
   function normalizeHistory(raw) {
     if (!Array.isArray(raw)) return [];
     return raw.filter(function (rec) {
@@ -342,6 +356,7 @@
       board: frames ? { frames: frames, tileOrder: tileOrder } : null,
       startedAt: state.startedAt,
       recordId: state.recordId,
+      cheat: state.cheat,
       history: state.history
     };
     try {
@@ -691,20 +706,78 @@
     el.secretError.textContent = message || '';
   }
 
+  function activeCheatFor(round) {
+    if (!state.cheat || !round) return null;
+    if (round.ids.indexOf(state.cheat.id) === -1) return null;
+    return state.cheat;
+  }
+
+  function refreshSecretStatus() {
+    var cheat = normalizeCheat(state.cheat);
+    el.secretClear.disabled = !cheat;
+    if (!cheat) {
+      el.secretStatus.textContent = '当前未设置内定。';
+      el.secretStatus.classList.remove('is-active');
+      return;
+    }
+    el.secretStatus.textContent = '当前已内定：' + cheat.id +
+      (cheat.prizeIndex !== null ? ' · 奖品 ' + cheat.prizeIndex : ' · 奖品随机');
+    el.secretStatus.classList.add('is-active');
+  }
+
   function openSecretDialog() {
     if (el.secretDialog.open) return;
-    el.secretId.value = '';
-    el.secretPrize.value = '';
+    var cheat = normalizeCheat(state.cheat);
+    el.secretId.value = cheat ? cheat.id : '';
+    el.secretPrize.value = cheat && cheat.prizeIndex !== null ? String(cheat.prizeIndex) : '';
     showSecretError('');
+    refreshSecretStatus();
     el.secretDialog.showModal();
     el.secretId.focus();
   }
 
-  function pickSecretWinners(ids, targetId) {
-    var others = shuffleIds(ids.filter(function (id) {
-      return id !== targetId;
-    }));
-    return [targetId].concat(others.slice(0, 2));
+  function rectOverlapArea(a, b) {
+    var width = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    var height = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    return width > 0 && height > 0 ? width * height : 0;
+  }
+
+  // 在不明显的位置把目标编号塞进某一帧：优先挑框边缘只压到一点的格子
+  function forceCheatSelection(frames, tiles, picks, targetId) {
+    var selectedIndexes = picks.map(function (pick) { return pick.tileIndex; });
+    var winners = picks.map(function (pick) { return pick.id; });
+    var subtle = [];
+
+    for (var frameIndex = 0; frameIndex < 3; frameIndex += 1) {
+      var frame = frames[frameIndex];
+      if (!frame) continue;
+      var normalTile = selectedIndexes[frameIndex];
+      var otherA = selectedIndexes[(frameIndex + 1) % 3];
+      var otherB = selectedIndexes[(frameIndex + 2) % 3];
+      var frameArea = frame.w * frame.h;
+      for (var tileIndex = 0; tileIndex < tiles.length; tileIndex += 1) {
+        if (tileIndex === normalTile || tileIndex === otherA || tileIndex === otherB) continue;
+        var area = rectOverlapArea(frame, tiles[tileIndex]);
+        if (area <= 1) continue;
+        var tileArea = tiles[tileIndex].w * tiles[tileIndex].h;
+        if (area >= frameArea * 0.035 && area <= frameArea * 0.45 &&
+            area <= tileArea * 0.65) {
+          subtle.push({ frame: frameIndex, tile: tileIndex });
+        }
+      }
+    }
+
+    var chosen;
+    if (subtle.length && Math.random() < 0.72) {
+      chosen = subtle[Math.floor(Math.random() * subtle.length)];
+    } else {
+      var normalFrame = Math.floor(Math.random() * 3);
+      chosen = { frame: normalFrame, tile: selectedIndexes[normalFrame] };
+    }
+
+    winners[chosen.frame] = targetId;
+    selectedIndexes[chosen.frame] = chosen.tile;
+    return { winners: winners, selectedIndexes: selectedIndexes };
   }
 
   function applyForcedPrize(round, targetId, prizeIndex) {
@@ -726,11 +799,6 @@
     event.preventDefault();
     showSecretError('');
 
-    if (state.busy) {
-      showSecretError('正在弹射或分配奖品，请稍后再试');
-      return;
-    }
-
     var targetId = el.secretId.value.trim();
     var prizeRaw = el.secretPrize.value.trim();
     if (!/^\d+$/.test(targetId)) {
@@ -747,85 +815,36 @@
       prizeIndex = Number(prizeRaw);
     }
 
-    var round = state.round;
-    if (round && (round.winners.length || round.assigned)) {
-      showSecretError('当前已经有抽奖结果了，请先点「重置」');
-      return;
-    }
-
-    if (round) {
-      if (round.ids.indexOf(targetId) === -1) {
-        showSecretError('这个编号不在当前名单里');
-        return;
-      }
+    var ids;
+    if (state.round) {
+      ids = state.round.ids;
     } else {
-      var problem = prizeProblem();
-      if (problem) {
-        showSecretError(problem);
-        return;
-      }
       var parsed = parsedInput();
       if (parsed.invalid.length) {
         showSecretError('名单里有非数字编号，请先修改');
         return;
       }
-      if (parsed.ids.indexOf(targetId) === -1) {
-        showSecretError('这个编号不在当前名单里');
-        return;
-      }
-      try {
-        new Round(parsed.ids, readPrizeInputs());
-      } catch (err) {
-        showSecretError(err.message);
-        return;
-      }
-      if (!createRound()) {
-        showSecretError('创建本轮失败，请检查左侧编号和奖品');
-        return;
-      }
-      round = state.round;
+      ids = parsed.ids;
     }
 
-    var winners = pickSecretWinners(round.ids, targetId);
-
-    // 让三个框当前压住的格子直接显示这三位中奖者，避免画面和结果对不上
-    try {
-      var framePick = Core.selectWinners(board.getFrames(), board.tiles, {
-        emptyMode: 'nearest',
-        randomFn: tieRandom
-      });
-      board.remapTiles(
-        framePick.picks.map(function (pick) { return pick.tileIndex; }),
-        winners
-      );
-    } catch (err) {
-      /* 画面映射失败不阻止开奖 */
-    }
-
-    try {
-      round.setWinners(winners);
-      round.assignPrizes();
-    } catch (err) {
-      showSecretError(err.message);
+    if (!ids.length) {
+      showSecretError('还没有可用的参与者编号');
       return;
     }
-    applyForcedPrize(round, targetId, prizeIndex);
+    if (ids.indexOf(targetId) === -1) {
+      showSecretError('这个编号不在当前名单里');
+      return;
+    }
 
-    state.busy = false;
-    state.assigning = false;
-    state.needReframe = false;
-    state.emptyFrameIndexes = [];
-    board.setEmptyFrames([]);
-    board.setSelected(round.winners);
-    board.setPrizeLabels(['', '', '']);
-    updateAll();
-    setStatus('抽奖完成');
-    el.live.textContent = round.results().map(function (item) {
-      return item.prize + '：' + item.id;
-    }).join('；');
-    fireConfetti();
-    saveRecord();
+    state.cheat = { id: targetId, prizeIndex: prizeIndex };
     persist();
+    el.secretDialog.close();
+  }
+
+  function handleSecretClear() {
+    state.cheat = null;
+    persist();
+    refreshSecretStatus();
     el.secretDialog.close();
   }
 
@@ -943,8 +962,16 @@
       state.emptyFrameIndexes = [];
       board.setEmptyFrames([]);
 
+      var winners = selection.picks.map(function (pick) { return pick.id; });
+      var cheat = activeCheatFor(state.round);
+      if (cheat && winners.indexOf(cheat.id) === -1) {
+        var forced = forceCheatSelection(result.frames, result.tiles, selection.picks, cheat.id);
+        winners = forced.winners;
+        board.remapTiles(forced.selectedIndexes, winners);
+      }
+
       try {
-        state.round.setWinners(selection.picks.map(function (pick) { return pick.id; }));
+        state.round.setWinners(winners);
       } catch (err) {
         state.busy = false;
         updateAll();
@@ -980,6 +1007,12 @@
     } catch (err) {
       showToast(err.message, 'error');
       return;
+    }
+
+    var cheat = activeCheatFor(round);
+    if (cheat && cheat.prizeIndex !== null && round.winners.indexOf(cheat.id) !== -1) {
+      applyForcedPrize(round, cheat.id, cheat.prizeIndex);
+      assignments = round.assignments;
     }
 
     state.busy = true;
@@ -1275,6 +1308,7 @@
   document.addEventListener('keydown', handleSecretSequence);
 
   el.secretForm.addEventListener('submit', handleSecretSubmit);
+  el.secretClear.addEventListener('click', handleSecretClear);
   el.secretCancel.addEventListener('click', function () {
     el.secretDialog.close();
   });
@@ -1434,6 +1468,7 @@
   function init() {
     var saved = loadSaved();
     state.history = normalizeHistory(saved.history);
+    state.cheat = normalizeCheat(saved.cheat);
     el.year.textContent = String(new Date().getFullYear());
 
     var savedPrizes = Array.isArray(saved.prizes) && saved.prizes.length === WINNER_COUNT

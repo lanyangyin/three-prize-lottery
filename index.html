@@ -178,8 +178,8 @@
 
   <dialog id="secret-dialog" class="dialog">
     <form class="dialog-card" id="secret-form" novalidate>
-      <h3>隐藏开奖</h3>
-      <p class="secret-note">指定一位参与者，他必定中奖；奖品序号留空则随机。其余两位中奖者和剩余奖品随机补全。</p>
+      <h3>隐藏设置</h3>
+      <p class="secret-note">这里只记录内定，不会立刻开奖。设置后，之后每次弹射都会让该编号成为中奖者；奖品序号留空则每次随机。</p>
       <label class="field">
         <span>参与者编号</span>
         <input id="secret-id" type="text" inputmode="numeric" autocomplete="off" maxlength="20" placeholder="输入名单中的数字编号">
@@ -188,10 +188,12 @@
         <span>奖品序号（可选）</span>
         <input id="secret-prize" type="text" inputmode="numeric" autocomplete="off" maxlength="1" placeholder="1 / 2 / 3，留空随机">
       </label>
+      <p class="secret-status" id="secret-status"></p>
       <p class="secret-error" id="secret-error" hidden></p>
       <div class="dialog-actions">
+        <button class="btn btn-ghost secret-clear" id="secret-clear" type="button" disabled>清除作弊</button>
         <button class="btn btn-ghost" id="secret-cancel" type="button">取消</button>
-        <button class="btn btn-primary" type="submit">确定</button>
+        <button class="btn btn-primary" type="submit">保存设置</button>
       </div>
     </form>
   </dialog>
