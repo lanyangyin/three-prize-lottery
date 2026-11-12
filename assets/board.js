@@ -252,7 +252,9 @@
   function coverageInfo(frames, tiles, targetIndex) {
     var targetMax = false;
     var allCover = true;
-    frames.forEach(function (frame) {
+    var targetRatio = 0;
+    var targetFrame = -1;
+    frames.forEach(function (frame, frameIndex) {
       var maxArea = 0;
       var targetArea = 0;
       tiles.forEach(function (tile, index) {
@@ -263,9 +265,21 @@
         if (index === targetIndex) targetArea = area;
       });
       if (maxArea <= 1) allCover = false;
-      if (targetArea >= maxArea - 1) targetMax = true;
+      if (targetArea >= maxArea - 1 && maxArea > 1) {
+        targetMax = true;
+        var ratio = targetArea / (frame.w * frame.h);
+        if (ratio > targetRatio) {
+          targetRatio = ratio;
+          targetFrame = frameIndex;
+        }
+      }
     });
-    return { targetMax: targetMax, allCover: allCover };
+    return {
+      targetMax: targetMax,
+      allCover: allCover,
+      targetRatio: targetRatio,
+      targetFrame: targetFrame
+    };
   }
 
   function simulateCandidate(startFrames, params, tiles, targetIndex) {
@@ -294,6 +308,8 @@
       frames: frames,
       targetMax: info.targetMax,
       allCover: info.allCover,
+      targetRatio: info.targetRatio,
+      targetFrame: info.targetFrame,
       pathRatio: stats.distance / Math.max(displacement, 1),
       steps: steps + 1,
       stats: stats
@@ -604,16 +620,32 @@
         accepted.push({
           params: params,
           stats: sim.stats,
-          pathRatio: sim.pathRatio
+          pathRatio: sim.pathRatio,
+          targetRatio: sim.targetRatio
         });
         if (accepted.length >= 16) break;
       }
 
       if (accepted.length) {
-        var chosen = accepted[Math.floor(Math.random() * accepted.length)];
+        var normal = accepted.filter(function (item) {
+          return item.targetRatio >= 0.5;
+        });
+        var close = accepted.filter(function (item) {
+          return item.targetRatio < 0.5;
+        });
+        var pool = accepted;
+        if (normal.length && close.length) {
+          pool = Math.random() < 0.7 ? normal : close;
+        } else if (normal.length) {
+          pool = normal;
+        } else if (close.length) {
+          pool = close;
+        }
+        var chosen = pool[Math.floor(Math.random() * pool.length)];
         var plan = recordTrajectory(startFrames, chosen.params, this.tiles);
         plan.stats = chosen.stats;
         plan.pathRatio = chosen.pathRatio;
+        plan.targetRatio = chosen.targetRatio;
         plan.candidates = totalCandidates;
         return plan;
       }
